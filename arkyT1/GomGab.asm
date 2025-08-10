@@ -212,6 +212,24 @@ CodeSegment segment
         Ret
     ValidateParameter endP
 
+    ; Obtains the int value of numerical digits or alphabetic digits (for Hex)
+    ; Inputs: Expects a numerical char or an uppercase alpha (A to F) in CL
+    ; Outputs: Returns the corresponding int value back in CL
+    ParseDigit proc
+        Cmp cl, 39h
+        Ja AUX_ParseDigit ; Alpha values are retrieved using separate logic
+
+        Xor cl, 30h         ; Clear high bits for any 3Xh numerical char to retrieve int
+        Jmp END_ParseDigit
+
+    AUX_ParseDigit:
+        Xor cl, 40h ; Discard higher bits for 4Xh values
+        Add cl, 09h ; Offset to alpha values (X1h) obtains int (A-> X1h + 9 = 10, F-> X6h + 9 = 15)
+
+    END_ParseDigit:
+        Ret
+    ParseDigit endP
+
     ; Reads numerical parameter char-by-char to obtain int value
     ; Inputs: Assumes BX offset to whitespace preceeding param
     ; Outputs: Int value is kept in AX
@@ -232,7 +250,7 @@ CodeSegment segment
 
         ; Otherwise, calculate int value
         Mul word ptr base     ; Update positional value of current sum
-        Xor cl, 30h  ; Clear high bits for any 3Xh numerical char to retrieve int
+        call ParseDigit
         Add al, cl   ; Add value to newest Least Significant Position
 
         Jmp ITER_ParseNumParameter ; Repeat until input is consumed
