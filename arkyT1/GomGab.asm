@@ -194,6 +194,32 @@ CodeSegment segment
         Ret
     ReadCL endP
 
+    ; Validates base-parameter and updates prog's working base. Halts and flags an error if necessary
+    ; Input: Assumes uppercase alphabetic value to be in AL
+    ; Output: Changes Data's base accordingly to input if valid. Changes progState code if not valid.
+    ValidateParameter proc
+        Cmp al, 'H'
+        Jne CASE_B_ValidateParameter ; If not equal, check for B
+        Mov base, 10h ; Otherwise, set hex base
+        Jmp END_ValidateParameter
+
+    CASE_B_ValidateParameter:
+        Cmp al, 'B'
+        Jne CASE_O_ValidateParameter
+        Mov base, 10b ; Otherwise, set bin base
+        Jmp END_ValidateParameter
+
+    CASE_O_ValidateParameter:
+        Cmp al, 'O'
+        Jne STATE_WrongBase
+        Mov base, 10o ; Otherwise, set oct base
+        Jmp END_ValidateParameter
+
+    STATE_WrongBase: Mov progState, 02h ; Error - Unexpected char in base parameter
+    END_ValidateParameter:
+        Ret
+    ValidateParameter endP
+
     ; Reads numerical parameter char-by-char to obtain int value
     ParseNumParameter proc
 
@@ -213,15 +239,17 @@ CodeSegment segment
         Inc bx ; Point to input-preceding whitespace
         Inc bx ; Point to Mr Flat's base
 
-        Mov al, byte ptr es:[bx]
-        Mov mrFlatBase, al          ; Save char as base to display
+        Mov al, byte ptr es:[bx] ; Read base parameter
+        Call ValidateParameter
+        Cmp progState, 00h
+        Jmp END_ReadInput   ; Skip proc if param had an error
 
-        ; Logic that sets base accordingly to input (or halts and displays error)
+        Mov mrFlatBase, al  ; Otherwise, save value to display it
 
         ; Logic that casts numerical str to int values according to base inputted
 
 
-    STATE_NoInput: Mov 
+    STATE_NoInput: Mov progState, 01h ; Error - No Input
     END_ReadInput:
         Pop cx
         Pop bx
