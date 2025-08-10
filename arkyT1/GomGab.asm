@@ -31,7 +31,12 @@
 ;
 
 DataSegment segment
-    error       db "Error: Se ha ingresado una base númerica no esperada. Debe usar H, B, u O", "$"
+    progState   db 00h
+    mrFlatBase  db 00h
+    mrHeight    db 80h      
+    mrWidth     db 80h
+
+    errorMsg    db "Error: Se ha ingresado una base númerica no esperada. Debe usar H, B, u O", "$"
     aboutMeL1   db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. DD/MM/2025", "$"
     aboutMeL2   db "Tarea --- | Autor: Gabriel Gomez Vega, 2021106483", "$"
     helpMe      db "Ingrese los datos solicitados", "$"
@@ -136,6 +141,16 @@ CodeSegment segment
     PrintHelp endP
 
     PrintError proc
+        Push ax
+        Push dx
+
+        Mov dx, offset errorMsg ; Set $tring address
+        Mov ax, 0900h           ; and DOS routine for printing it
+        Int 21h
+        Call PrintCRLF
+
+        Pop dx
+        Pop ax
         Ret
     PrintError endP
 
@@ -157,18 +172,18 @@ CodeSegment segment
         Mov bx, 80h                 ; Offset for input in PSP
         Mov cl, byte ptr es:[bx]    ; Obtain input size from offset ptr
 
-        cmp cl, 0
+        Cmp cl, 0
         Je END_ReadCL   ; Skip if empty
     
-        mov ax, 0200h ; Set DOS-int for char printing
-        xor dh, dh    ; Clear in prep for int
+        Mov ax, 0200h ; Set DOS-int for char printing
+        Xor dh, dh    ; Clear in prep for int
 
-        dec cl ; Ignore extra whitespace count
-        inc bx ; Point to input-preceding whitespace
+        Dec cl ; Ignore extra whitespace count
+        Inc bx ; Point to input-preceding whitespace
     ITER_ReadCL:
-        inc bx      ; Point to next byte
-        mov dl, byte ptr es:[bx]
-        int 21h     ; Print current char
+        Inc bx      ; Point to next byte
+        Mov dl, byte ptr es:[bx]
+        Int 21h     ; Print current char
         Loop ITER_ReadCL
 
     END_ReadCL:
@@ -178,6 +193,42 @@ CodeSegment segment
         Pop ax
         Ret
     ReadCL endP
+
+    ; Reads numerical parameter char-by-char to obtain int value
+    ParseNumParameter proc
+
+        Ret
+    ParseNumParameter endP
+
+    ; Reads the command line's input and stores parameters if any
+    ReadInput proc
+        Push ax
+        Push bx
+        Push cx
+
+        Cmp byte ptr es:[bx], 0    ; Is there an input?
+        Je STATE_NoInput           ; Set new prog state, and halt proc if no input
+
+        ; If there is input, retrieve values only
+        Inc bx ; Point to input-preceding whitespace
+        Inc bx ; Point to Mr Flat's base
+
+        Mov al, byte ptr es:[bx]
+        Mov mrFlatBase, al          ; Save char as base to display
+
+        ; Logic that sets base accordingly to input (or halts and displays error)
+
+        ; Logic that casts numerical str to int values according to base inputted
+
+
+    STATE_NoInput: Mov 
+    END_ReadInput:
+        Pop cx
+        Pop bx
+        Pop ax
+        Ret
+        Ret
+    ReadInput endP
 
     main:
         Mov ax, ds
