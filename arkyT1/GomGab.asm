@@ -33,10 +33,10 @@
 DataSegment segment
     progState   db 00h
     mrFlatBase  db 00h
-    mrHeight    dw 0080h      
-    mrWidth     dw 0080h
+    mrHeight    dw 80     
+    mrWidth     dw 80
 
-    errorMsg    db "Error: Se ha ingresado una base númerica desconocida. Debe usar H, B, u O", "$"
+    errorMsg    db "Error: Se ha ingresado una base numerica desconocida. Debe usar H, B, u O", "$"
     aboutMeL1   db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. 13/Agosto/2025", "$"
     aboutMeL2   db "Tarea Mr.Flat Tri Base | Autor: Gabriel Gomez Vega, 2021106483", "$"
     helpMe      db "Ingrese los datos para Mr.Flat: -Base (H, B, O) -Altura -Grosor", "$"
@@ -213,32 +213,33 @@ CodeSegment segment
     ValidateParameter endP
 
     ; Reads numerical parameter char-by-char to obtain int value
-    ; Inputs: Assumes BX offset to whitespace preceeding param, and DI offset to Height o Width variable
-    ; Outputs: Int value is saved to variable
+    ; Inputs: Assumes BX offset to whitespace preceeding param
+    ; Outputs: Int value is kept in AX
     ParseNumParameter proc
-        Push ax
         Push cx    ; To store int value retrieved per iter
         Push dx    ; Altered by Mul operations
-        Xor ax, ax ; Clear to accumulate sum in register
 
+        Xor ax, ax  ; Clear to accumulate sum in register
+        Mov ch, 80h                 ; Copy base offset
+        Add ch, byte ptr es:[80h]   ; Add input size to obtain iter limit
     ITER_ParseNumParameter:
         Inc bx                   ; Point to next value
+        Cmp bl, ch
+        Ja END_ParseNumParameter ; Input ran out, halt proc
         Mov cl, byte ptr es:[bx] ; Read current char
         Cmp cl, ' '
         Je END_ParseNumParameter ; If end of param, halt proc
 
         ; Otherwise, calculate int value
-        Mul ax, base ; Update positional value of current sum
+        Mul word ptr base     ; Update positional value of current sum
         Xor cl, 30h  ; Clear high bits for any 3Xh numerical char to retrieve int
         Add al, cl   ; Add value to newest Least Significant Position
 
         Jmp ITER_ParseNumParameter ; Repeat until input is consumed
 
     END_ParseNumParameter:
-        Mov word ptr ds:[di], ax ; Save parsed value to variable
         Pop dx
         Pop cx
-        Pop ax
         Ret
     ParseNumParameter endP
 
@@ -246,8 +247,8 @@ CodeSegment segment
     ReadInput proc
         Push ax
         Push bx
-        Push di
 
+        Mov bx, 80h                ; Offset for input in PSP
         Cmp byte ptr es:[bx], 0    ; Is there an input?
         Je STATE_NoInput           ; If not, set new prog state, and halt proc
 
@@ -258,20 +259,26 @@ CodeSegment segment
     
         Call ValidateParameter
         Cmp progState, 00h
-        Jmp END_ReadInput   ; Skip proc if param had an error
+        Jne END_ReadInput   ; Skip proc if param had an error
         Mov mrFlatBase, al  ; Otherwise, save value to display it
 
         Inc bx                  ; Point to whitespace preceeding height value (*)
-        Mov di, offset mrHeight ; Prep offset ptr before parsing proc
         Call ParseNumParameter
 
-        Mov di, offset mrWidth ; Prep offset again
+        Cmp ax, mrHeight
+        Jae AUX_ReadInput   ; If >= 80, keep default 80 height
+        Mov mrHeight, ax    ; Assign read value otherwise
+
+    AUX_ReadInput:
         Call ParseNumParameter ; Prev call halted at whitespace preceeding width value (*)
-        Jmp END_ReadInput ; Skip error flagging line
+
+        Cmp ax, mrWidth
+        Jae END_ReadInput  ; Keep default if >= 80
+        Mov mrWidth, ax    ; Assign new value otherwise    
+        Jmp END_ReadInput  ; Skip error flagging line
 
     STATE_NoInput: Mov progState, 01h ; Error - No Input
     END_ReadInput:
-        Pop di
         Pop bx
         Pop ax
         Ret
@@ -290,9 +297,36 @@ CodeSegment segment
         
 
         Call PrintAboutMe
-        Call PrintHelp
+        Call ReadInput
 
-        Call ReadCL
+        Cmp progState, 01h
+        Je AUX_HelpMe
+        Cmp progState, 02h
+        Je Aux_ErrorMsg
+
+
+        Mov ax, base
+        Mov base, 10
+        Call PrintAX
+        Call PrintCRLF
+
+        Mov ax, mrHeight
+        Call PrintAX
+        Call PrintCRLF
+
+        Mov ax, mrWidth
+        Call PrintAX
+        Call PrintCRLF
+
+        ;Call Execute
+        Jmp exit ; Skip error handling
+
+    AUX_HelpMe:
+        call PrintHelp
+        Jmp exit ; Skip error printing
+    Aux_ErrorMsg:
+        call PrintError
+
     exit:
         Mov ax, 4C00h
         Int 21h
