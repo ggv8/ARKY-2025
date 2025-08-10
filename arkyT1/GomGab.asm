@@ -33,14 +33,13 @@
 DataSegment segment
     progState   db 00h
     mrFlatBase  db 00h
-    mrHeight    db 80h      
-    mrWidth     db 80h
+    mrHeight    dw 0080h      
+    mrWidth     dw 0080h
 
-    errorMsg    db "Error: Se ha ingresado una base númerica no esperada. Debe usar H, B, u O", "$"
-    aboutMeL1   db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. DD/MM/2025", "$"
-    aboutMeL2   db "Tarea --- | Autor: Gabriel Gomez Vega, 2021106483", "$"
-    helpMe      db "Ingrese los datos solicitados", "$"
-    numberChar  db "25"
+    errorMsg    db "Error: Se ha ingresado una base númerica desconocida. Debe usar H, B, u O", "$"
+    aboutMeL1   db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. 13/Agosto/2025", "$"
+    aboutMeL2   db "Tarea Mr.Flat Tri Base | Autor: Gabriel Gomez Vega, 2021106483", "$"
+    helpMe      db "Ingrese los datos para Mr.Flat: -Base (H, B, O) -Altura -Grosor", "$"
     base        dw 10
 DataSegment endS
 
@@ -140,6 +139,7 @@ CodeSegment segment
         Ret
     PrintHelp endP
 
+    ; Print the program's error message
     PrintError proc
         Push ax
         Push dx
@@ -153,14 +153,6 @@ CodeSegment segment
         Pop ax
         Ret
     PrintError endP
-
-    ; Obtains the integer value of a number expressed in a char
-    ; Inputs:  Expects numerical char in DL
-    ; Outputs: Returns int value back in DL
-    CharToInt proc
-        Xor dl, 30h ; Clears high bits for any 3Xh value
-        Ret
-    CharToInt endP
 
     ; Reads the command line's input back to the standard output
     ReadCL proc
@@ -221,8 +213,32 @@ CodeSegment segment
     ValidateParameter endP
 
     ; Reads numerical parameter char-by-char to obtain int value
+    ; Inputs: Assumes BX offset to whitespace preceeding param, and DI offset to Height o Width variable
+    ; Outputs: Int value is saved to variable
     ParseNumParameter proc
+        Push ax
+        Push cx    ; To store int value retrieved per iter
+        Push dx    ; Altered by Mul operations
+        Xor ax, ax ; Clear to accumulate sum in register
 
+    ITER_ParseNumParameter:
+        Inc bx                   ; Point to next value
+        Mov cl, byte ptr es:[bx] ; Read current char
+        Cmp cl, ' '
+        Je END_ParseNumParameter ; If end of param, halt proc
+
+        ; Otherwise, calculate int value
+        Mul ax, base ; Update positional value of current sum
+        Xor cl, 30h  ; Clear high bits for any 3Xh numerical char to retrieve int
+        Add al, cl   ; Add value to newest Least Significant Position
+
+        Jmp ITER_ParseNumParameter ; Repeat until input is consumed
+
+    END_ParseNumParameter:
+        Mov word ptr ds:[di], ax ; Save parsed value to variable
+        Pop dx
+        Pop cx
+        Pop ax
         Ret
     ParseNumParameter endP
 
@@ -230,28 +246,32 @@ CodeSegment segment
     ReadInput proc
         Push ax
         Push bx
-        Push cx
+        Push di
 
         Cmp byte ptr es:[bx], 0    ; Is there an input?
-        Je STATE_NoInput           ; Set new prog state, and halt proc if no input
+        Je STATE_NoInput           ; If not, set new prog state, and halt proc
 
-        ; If there is input, retrieve values only
+        ; If there is, retrieve values only
         Inc bx ; Point to input-preceding whitespace
         Inc bx ; Point to Mr Flat's base
-
         Mov al, byte ptr es:[bx] ; Read base parameter
+    
         Call ValidateParameter
         Cmp progState, 00h
         Jmp END_ReadInput   ; Skip proc if param had an error
-
         Mov mrFlatBase, al  ; Otherwise, save value to display it
 
-        ; Logic that casts numerical str to int values according to base inputted
+        Inc bx                  ; Point to whitespace preceeding height value (*)
+        Mov di, offset mrHeight ; Prep offset ptr before parsing proc
+        Call ParseNumParameter
 
+        Mov di, offset mrWidth ; Prep offset again
+        Call ParseNumParameter ; Prev call halted at whitespace preceeding width value (*)
+        Jmp END_ReadInput ; Skip error flagging line
 
     STATE_NoInput: Mov progState, 01h ; Error - No Input
     END_ReadInput:
-        Pop cx
+        Pop di
         Pop bx
         Pop ax
         Ret
