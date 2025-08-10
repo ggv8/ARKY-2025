@@ -7,7 +7,38 @@
     ; ╔═════════════════════════════════════════════════════════════════════════╗
     ; ║                            Manual de Usuario                            ║
     ; ╠═════════════════════════════════════════════════════════════════════════╣
+    ; ║ Este programa despliega a Mr.Flat en la salida estandar segun los para- ║
+    ; ║ metros que se ingresen en la linea de comandos. Se esperan los siguien- ║
+    ; ║ tes valores:                                                            ║
+    ; ║     - Base                                                              ║
+    ; ║         Indica la base numerica con la que opera el programa para  los  ║
+    ; ║         parametros de altura y ancho. Es ademas el caracter que se uti- ║
+    ; ║         za para representar a Mr.Flat al imprimirlo. Se esperan letras  ║
+    ; ║         mayusculas o minusculas, pero deben ser para las bases binaria  ║
+    ; ║         (B), octal (O), o hexadecimal (H)                               ║
+    ; ║     - Altura                                                            ║
+    ; ║         Espera un valor numerico expresado en la base solicitada. Este  ║
+    ; ║         indica la altura que debe tomar Mr.Flat en pantalla. Si se exe- ║
+    ; ║         de un valor de 80 decimal, el programa asume este mismo valor   ║
+    ; ║         como la altura solicitada                                       ║
+    ; ║     - Ancho                                                             ║
+    ; ║         Espera un valor numerico en la base solicitada. Indica el ancho ║
+    ; ║         que debe tomar Mr.Flat en pantalla al imprimirlo. De igual for- ║
+    ; ║         ma, se establece un limite de 80 decimal en su valor y se asume ║
+    ; ║         como tal en caso de que su entrada exceda esa cifra             ║
     ; ║                                                                         ║
+    ; ║ Si no se ingresa ningun parametro, el programa mostrara en pantalla una ║
+    ; ║ ayuda al usuario que resume la informacion anterior. Siempre que se co- ║
+    ; ║ rre el archivo se mostrara una corta descripcion acerca del programa.   ║
+    ; ║                                                                         ║
+    ; ║ Si se ingresa una base no reconocida, el programa mostrara  un  mensaje ║
+    ; ║ de error detallando las bases que se esperan. De acuerdo a la especifi- ║
+    ; ║ caciones solicitadas, no se realiza ninguna validacion adicional.       ║
+    ; ║                                                                         ║
+    ; ║ Al ingresar los parametros solicitados, el ejecutable  leera su entrada ║
+    ; ║ y hara la conversion numerica  que usted espera para asi  calcular las  ║
+    ; ║ dimensiones que Mr.Flat tomara en pantalla. Seguido de ello, se mostra- ║
+    ; ║ ra en pantalla compuesto del caracter de la base numerica elegida.      ║
     ; ╚═════════════════════════════════════════════════════════════════════════╝
     ; ╔═════════════════════════════════════════════════════════════════════════╗
     ; ║                        Analisis de Resultados                           ║
@@ -18,25 +49,26 @@
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
     ; ║ Despliegue del Acerca De                                 ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Despliegue de la Ayuda                                   ║      -       ║
+    ; ║ Despliegue de la Ayuda                                   ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
     ; ║ Lectura de la linea de comandos                          ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Conversión de texto a número                             ║      -       ║
+    ; ║ Conversión de texto a número                             ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Despliegue de Mr. Flat                                   ║      -       ║
+    ; ║ Despliegue de Mr. Flat                                   ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Despliegue del Error (Base no esperada)                  ║      -       ║
+    ; ║ Despliegue del Error (Base no esperada)                  ║      A       ║
     ; ╚══════════════════════════════════════════════════════════╩══════════════╝
 ;
 
 DataSegment segment
     progState   db 00h
-    mrFlatBase  db 00h
     mrHeight    dw 80     
     mrWidth     dw 80
 
-    errorMsg    db "Error: Se ha ingresado una base numerica desconocida. Debe usar H, B, u O", "$"
+    errorMsg   db "Error: Se ha ingresado una base numerica desconocida ("
+    mrFlatBase  db 00h ; Positioned here intentionally in case an invalid base is used (can be printed directly)
+                db "). Debe usar H, B, u O", "$"
     aboutMeL1   db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. 13/Agosto/2025", "$"
     aboutMeL2   db "Tarea Mr.Flat Tri Base | Autor: Gabriel Gomez Vega, 2021106483", "$"
     helpMe      db "Ingrese los datos para Mr.Flat: -Base (H, B, O) -Altura -Grosor", "$"
@@ -104,6 +136,8 @@ CodeSegment segment
     PrintCRLF endP
 
     ; Print details about the program's creation
+    ; Inputs: Expects two string literals predefined in variables
+    ; Outputs: Sends the two lines to standard output, separated by a newline
     PrintAboutMe proc
         Push ax
         Push dx
@@ -117,6 +151,7 @@ CodeSegment segment
         Mov dx, offset aboutMeL2 ; Repeat for next line
         Int 21h
         Call PrintCRLF
+        Call PrintCRLF
 
         Pop dx
         Pop ax
@@ -124,6 +159,8 @@ CodeSegment segment
     PrintAboutMe endP
 
     ; Print the program's help message
+    ; Inputs: Expects predefined help string literal in memory
+    ; Outputs: Sends the line to standard output, followed by a newline
     PrintHelp proc
         Push ax
         Push dx
@@ -140,12 +177,14 @@ CodeSegment segment
     PrintHelp endP
 
     ; Print the program's error message
+    ; Inputs: Expects predefined error string literal in memory
+    ; Outputs: Sends the line to standard output, followed by a newline
     PrintError proc
         Push ax
         Push dx
 
-        Mov dx, offset errorMsg ; Set $tring address
-        Mov ax, 0900h           ; and DOS routine for printing it
+        Mov dx, offset errorMsg  ; Set $tring address
+        Mov ax, 0900h            ; and DOS routine for printing it
         Int 21h
         Call PrintCRLF
 
@@ -155,6 +194,8 @@ CodeSegment segment
     PrintError endP
 
     ; Reads the command line's input back to the standard output
+    ; Inputs: Expects any input in command line
+    ; Outputs: Sends input back to standard output
     ReadCL proc
         Push ax
         Push bx
@@ -187,11 +228,14 @@ CodeSegment segment
     ReadCL endP
 
     ; Validates base-parameter and updates prog's working base. Halts and flags an error if necessary
-    ; Input: Assumes uppercase alphabetic value to be in AL
+    ; Input: Assumes an alphabetic value in AL
     ; Output: Changes Data's base accordingly to input if valid. Changes progState code if not valid.
     ValidateParameter proc
+        And al, 0DFh ; Enforce uppercase with bitmask
+        ; Uppercase: 4X,5Xh(0100-X,0101-X). Lowercase: 6X,7Xh(0110-X,0111-X). And 0DFh(1101-1111) discards 5th bit
+
         Cmp al, 'H'
-        Jne CASE_B_ValidateParameter ; If not equal, check for B
+        Jne CASE_B_ValidateParameter ; If not equal, check for B    
         Mov base, 10h ; Otherwise, set hex base
         Jmp END_ValidateParameter
 
@@ -262,6 +306,8 @@ CodeSegment segment
     ParseNumParameter endP
 
     ; Reads the command line's input and stores parameters if any
+    ; Inputs: Expects 3 parameters (char, num, num) in command line
+    ; Outputs: Stores values in data variables, and flags errors if necessary
     ReadInput proc
         Push ax
         Push bx
@@ -274,11 +320,11 @@ CodeSegment segment
         Inc bx ; Point to input-preceding whitespace
         Inc bx ; Point to Mr Flat's base
         Mov al, byte ptr es:[bx] ; Read base parameter
-    
+        Mov mrFlatBase, al  ; Save value for display
+
         Call ValidateParameter
         Cmp progState, 00h
         Jne END_ReadInput   ; Skip proc if param had an error
-        Mov mrFlatBase, al  ; Otherwise, save value to display it
 
         Inc bx                  ; Point to whitespace preceeding height value (*)
         Call ParseNumParameter
@@ -300,8 +346,54 @@ CodeSegment segment
         Pop bx
         Pop ax
         Ret
-        Ret
     ReadInput endP
+
+    ; Prints a single row of MrFlat, col-by-col, and a newline if necessary
+    ; Inputs: Expects valid parameters for base, and width in memory
+    ; Outputs: Sends chars of MrFlatBase to standard output until the row width is met
+    PrintMrRow proc
+        Push cx
+        Mov cx, mrWidth
+    ITER_PrintMrRow:
+        Cmp cx, 0
+        Je END_PrintMrRow ; Halt if width 0 or row is finished
+        Int 21h ; Trigger column printing
+        Dec cx  ; Update count
+        Jmp ITER_PrintMrRow
+    END_PrintMrRow:
+        Cmp mrWidth, 80
+        Je AUX_PrintMrRow ; Skip newline printing if width already covers a full line        
+        Call PrintCRLF
+
+    AUX_PrintMrRow:
+        Pop cx
+        Ret
+    PrintMrRow endP
+
+    ; Prints MrFlat, row-by-row
+    ; Inputs: Expects valid parameters for base, and height in memory
+    ; Outputs: Sends rows of MrFlatBase to standard output until the column height is met
+    PrintMrFlat proc
+        Push ax
+        Push cx
+        Push dx
+
+        Mov ax, 0200h       ; Set DOS routine for char printing
+        Mov dl, mrFlatBase  ; Prep char value to print
+        Mov cx, mrHeight
+    ITER_PrintMrFlat:
+        Cmp cx, 0
+        Je END_PrintMrFlat ; Halt if height 0 or MrFlat is finished
+        Call PrintMrRow
+        Dec cx               ; Update count
+        Jmp ITER_PrintMrFlat
+
+    END_PrintMrFlat:
+        Pop dx
+        Pop cx
+        Pop ax
+        Ret
+    PrintMrFlat endP
 
     main:
         Mov ax, ds
@@ -322,21 +414,19 @@ CodeSegment segment
         Cmp progState, 02h
         Je Aux_ErrorMsg
 
+        ; Prints de prueba para la conversion de texto a int
+        ; Mov ax, base  ; Guarda la base (parametro) en AX para su impresion
+        ; Mov base, 10  ; Restaura base 10 por conveniencia :)
+        ; Call PrintAX
+        ; Call PrintCRLF
+        ; Mov ax, mrHeight ; Para print del alto
+        ; Call PrintAX
+        ; Call PrintCRLF
+        ; Mov ax, mrWidth ; Para print del ancho
+        ; Call PrintAX
+        ; Call PrintCRLF
 
-        Mov ax, base
-        Mov base, 10
-        Call PrintAX
-        Call PrintCRLF
-
-        Mov ax, mrHeight
-        Call PrintAX
-        Call PrintCRLF
-
-        Mov ax, mrWidth
-        Call PrintAX
-        Call PrintCRLF
-
-        ;Call Execute
+        Call PrintMrFlat
         Jmp exit ; Skip error handling
 
     AUX_HelpMe:
