@@ -39,7 +39,9 @@ DataSegment segment
     ;
 
     ; State Machine
-        STATE_DEFAULT   = 00h
+        STATE_DEFAULT = 00h
+        STATE_HELP    = 01h
+        STATE_ERROR   = 80h
     ;
 
     ; Misc
@@ -52,6 +54,21 @@ DataSegment segment
             db "Tarea --- | Autor: Gabriel Gomez Vega, 2021106483", CHAR_NULL
     helpMe  db "Debe ingresar los siguientes datos:", CHAR_CR, CHAR_LF
             db CHAR_NULL
+    errorLabel db "Error: ", CHAR_NULL
+    errorMsg1  db "Ha ocurrido un error inesperado", CHAR_NULL
+;
+
+; Look-up Tables
+    stateTable db STATE_DEFAULT
+               dw PrintAX
+    stateOffset = ($ - stateTable)
+               db STATE_HELP
+               dw PrintAX
+    tableSize = ($ - stateTable) / stateOffset
+               db STATE_ERROR   ; Fail safe state
+               dw PrintAX
+
+    errorTable dw offset errorMsg1
 ;
 
     programState db STATE_DEFAULT
@@ -129,12 +146,12 @@ CodeSegment segment
         Xor al, al
         Mov ah, DOS_PRINT_STR ; $-string output
         
-        Mov dx, offset aboutMeL1 ; Set string's offset within DS
-        Int 21h
+        ;Mov dx, offset aboutMeL1 ; Set string's offset within DS
+        ;Int 21h
         Call PrintCRLF
 
-        Mov dx, offset aboutMeL2 ; Repeat for next line
-        Int 21h
+        ;Mov dx, offset aboutMeL2 ; Repeat for next line
+        ;Int 21h
         Call PrintCRLF
         Call PrintCRLF
 
@@ -154,7 +171,7 @@ CodeSegment segment
         Mov ah, DOS_PRINT_STR ; $-string output
 
         Mov dx, offset helpMe ; Set string's offset within DS
-        Int 21h
+        ;Int 21h
         Call PrintCRLF
 
         Pop dx
@@ -197,6 +214,34 @@ CodeSegment segment
         Ret
     ReadCL endP
 
+    ; Calls the routine associated with the state of the program
+    ; Inputs: Expects a valid state in programState variable
+    ; Outputs: Executes a routine through its address
+    RunStateMachine proc
+        Push cx
+        Push dx
+        Push si
+
+        Xor si, si           ; Base to address stateTable contents
+        Mov cx, tableSize
+        Mov dl, programState ; Copy to reg for mem to mem comparison
+
+    ITER_RunStateMachine:
+        Cmp dl, stateTable[si]
+        Je EXEC_State               ; Routine found
+        Add si, stateOffset         ; Otherwise, point to next row
+        Loop ITER_RunStateMachine
+        ; If out of range, SI points to failsafe, and executes it
+    EXEC_State:
+        Call word ptr stateTable[si+1] ; Offset SI by 1 to address the routine address, not the state code
+
+        Pop si
+        Pop dx
+        Pop cx
+        ret
+    RunStateMachine endP
+    
+
     main:
         Mov ax, ds
         Mov es, ax ; Save PSP's address
@@ -206,12 +251,11 @@ CodeSegment segment
 
         Mov ax, DataSegment
         Mov ds, ax ; Set data's address
-        
 
-        Call PrintAboutMe
-        Call PrintHelp
-
-        Call ReadCL
+        Mov programState, 14h
+        Xor ax, ax
+        Mov al, programState
+        Call RunStateMachine
     exit:
         Mov al, 00h
         Mov ah, 4Ch
