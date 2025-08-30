@@ -60,10 +60,10 @@ DataSegment segment
 
 ; Look-up Tables
     stateTable db STATE_DEFAULT
-               dw PrintAX
+               dw PrintAboutMe
     stateOffset = ($ - stateTable)
                db STATE_HELP
-               dw PrintAX
+               dw PrintHelp
     tableSize = ($ - stateTable) / stateOffset
                db STATE_ERROR   ; Fail safe state
                dw PrintAX
@@ -123,7 +123,7 @@ CodeSegment segment
         Push dx
 
         Xor al, al
-        Mov al, DOS_PRINT_CHAR
+        Mov ah, DOS_PRINT_CHAR
         
         Mov dl, CHAR_CR ; Carriage return
         Int 21h
@@ -136,46 +136,55 @@ CodeSegment segment
         Ret
     PrintCRLF endP
 
-    ; Print details about the program's creation
-    ; Inputs: Expects two string literals predefined in variables
-    ; Outputs: Sends the two lines to standard output, separated by a newline
-    PrintAboutMe proc
+    ; Prints a string reference char by char until a null termination is found
+    ; Inputs: SI - Address to string literal
+    ; Outputs: Sends each char to standard output via DOS' routine
+    PrintLikeC proc
         Push ax
         Push dx
 
         Xor al, al
-        Mov ah, DOS_PRINT_STR ; $-string output
-        
-        ;Mov dx, offset aboutMeL1 ; Set string's offset within DS
-        ;Int 21h
-        Call PrintCRLF
+        Mov ah, DOS_PRINT_CHAR
+    ITER_PrintLikeC:
+        Mov dl, byte ptr [si] ; Read char
+        Cmp dl, CHAR_NULL     ; Halt if EoStr
+        Je END_PrintLikeC
+        Int 21h
+        Inc si              ; Point to next char
+        jmp ITER_PrintLikeC
 
-        ;Mov dx, offset aboutMeL2 ; Repeat for next line
-        ;Int 21h
-        Call PrintCRLF
-        Call PrintCRLF
+    END_PrintLikeC:
 
         Pop dx
         Pop ax
         Ret
+    PrintLikeC endP
+
+    ; Print details about the program's creation
+    ; Inputs: N/A
+    ; Outputs: Reads aboutMe str to standard output, followed by a newline
+    PrintAboutMe proc
+        Push si
+
+        Mov si, offset aboutMe
+        Call PrintLikeC
+        Call PrintCRLF
+
+        Pop si
+        Ret
     PrintAboutMe endP
 
     ; Print the program's help message
-    ; Inputs: Expects predefined help string literal in memory
-    ; Outputs: Sends the line to standard output, followed by a newline
+    ; Inputs: N/A
+    ; Outputs: Reads aboutMe str to standard output, followed by a newline
     PrintHelp proc
-        Push ax
-        Push dx
+        Push si
 
-        Xor al, al
-        Mov ah, DOS_PRINT_STR ; $-string output
-
-        Mov dx, offset helpMe ; Set string's offset within DS
-        ;Int 21h
+        Mov si, offset helpMe
+        Call PrintLikeC
         Call PrintCRLF
 
-        Pop dx
-        Pop ax
+        Pop si
         Ret
     PrintHelp endP
 
@@ -252,7 +261,8 @@ CodeSegment segment
         Mov ax, DataSegment
         Mov ds, ax ; Set data's address
 
-        Mov programState, 14h
+
+        Mov programState, STATE_HELP
         Xor ax, ax
         Mov al, programState
         Call RunStateMachine
