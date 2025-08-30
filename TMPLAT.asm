@@ -23,11 +23,39 @@
 ;
 
 DataSegment segment
-    aboutMeL1   db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. DD/MM/2025", "$", 0Dh, 0Ah
-    aboutMeL2   db "Tarea --- | Autor: Gabriel Gomez Vega, 2021106483", "$"
-    helpMe      db "Ingrese los datos solicitados", "$"
-    numberChar  db "25"
-    base        dw 10
+; Symbolic Constants
+
+    ; Interruptions
+        DOS_PRINT_CHAR  = 02h
+        DOS_PRINT_STR   = 09h
+        DOS_EXIT        = 4Ch
+    ;
+
+    ; ASCII
+        CHAR_NULL  = 00h
+        CHAR_CR    = 0Dh
+        CHAR_LF    = 0Ah
+        CHAR_SPACE = 20h
+    ;
+
+    ; State Machine
+        STATE_DEFAULT   = 00h
+    ;
+
+    ; Misc
+        PSP_INPUT_OFFSET = 80h
+    ;
+;
+
+; String literals
+    aboutMe db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. DD/MM/2025", CHAR_CR, CHAR_LF
+            db "Tarea --- | Autor: Gabriel Gomez Vega, 2021106483", CHAR_NULL
+    helpMe  db "Debe ingresar los siguientes datos:", CHAR_CR, CHAR_LF
+            db CHAR_NULL
+;
+
+    programState db STATE_DEFAULT
+    base dw 10
 DataSegment endS
 
 StackSegment segment stack 'stack'
@@ -54,7 +82,7 @@ CodeSegment segment
         inc cx
         cmp ax, 0
         jne ciclo1PAX
-        mov ah, 02h
+        mov ah, DOS_PRINT_CHAR
     ciclo2PAX: pop DX
         add dl, 30h
         cmp dl, 39h
@@ -77,12 +105,13 @@ CodeSegment segment
         Push ax
         Push dx
 
-        Mov ax, 0200h ; Set DOS interruption for char outputs
+        Xor al, al
+        Mov al, DOS_PRINT_CHAR
         
-        Mov dl, 0Dh ; Set carriage return
+        Mov dl, CHAR_CR ; Carriage return
         Int 21h
 
-        Mov dl, 0Ah ; Set line feed
+        Mov dl, CHAR_LF ; Line feed
         Int 21h
 
         Pop dx
@@ -91,11 +120,14 @@ CodeSegment segment
     PrintCRLF endP
 
     ; Print details about the program's creation
+    ; Inputs: Expects two string literals predefined in variables
+    ; Outputs: Sends the two lines to standard output, separated by a newline
     PrintAboutMe proc
         Push ax
         Push dx
 
-        Mov ax, 0900h ; Set DOS interruption for $-string output
+        Xor al, al
+        Mov ah, DOS_PRINT_STR ; $-string output
         
         Mov dx, offset aboutMeL1 ; Set string's offset within DS
         Int 21h
@@ -104,6 +136,7 @@ CodeSegment segment
         Mov dx, offset aboutMeL2 ; Repeat for next line
         Int 21h
         Call PrintCRLF
+        Call PrintCRLF
 
         Pop dx
         Pop ax
@@ -111,11 +144,14 @@ CodeSegment segment
     PrintAboutMe endP
 
     ; Print the program's help message
+    ; Inputs: Expects predefined help string literal in memory
+    ; Outputs: Sends the line to standard output, followed by a newline
     PrintHelp proc
         Push ax
         Push dx
 
-        Mov ax, 0900h ; Set DOS interruption for $-string output
+        Xor al, al
+        Mov ah, DOS_PRINT_STR ; $-string output
 
         Mov dx, offset helpMe ; Set string's offset within DS
         Int 21h
@@ -126,36 +162,31 @@ CodeSegment segment
         Ret
     PrintHelp endP
 
-    ; Obtains the integer value of a number expressed in a char
-    ; Inputs:  Expects numerical char in DL
-    ; Outputs: Returns int value back in DL
-    CharToInt proc
-        Xor dl, 30h ; Clears high bits for any 3Xh value
-        Ret
-    CharToInt endP
-
     ; Reads the command line's input back to the standard output
+    ; Inputs: Expects any input in command line
+    ; Outputs: Sends input back to standard output
     ReadCL proc
         Push ax
         Push bx
         Push cx
         Push dx
 
-        Mov bx, 80h                 ; Offset for input in PSP
+        Mov bx, PSP_INPUT_OFFSET
         Mov cl, byte ptr es:[bx]    ; Obtain input size from offset ptr
 
-        cmp cl, 0
+        Cmp cl, 0
         Je END_ReadCL   ; Skip if empty
-    
-        mov ax, 0200h ; Set DOS-int for char printing
-        xor dh, dh    ; Clear in prep for int
 
-        dec cl ; Ignore extra whitespace count
-        inc bx ; Point to input-preceding whitespace
+        Xor al, al
+        Mov ah, DOS_PRINT_CHAR
+        Xor dh, dh    ; Clear in prep for int
+
+        Dec cl ; Ignore extra whitespace count
+        Inc bx ; Point to input-preceding whitespace
     ITER_ReadCL:
-        inc bx      ; Point to next byte
-        mov dl, byte ptr es:[bx]
-        int 21h     ; Print current char
+        Inc bx      ; Point to next byte
+        Mov dl, byte ptr es:[bx]
+        Int 21h     ; Print current char
         Loop ITER_ReadCL
 
     END_ReadCL:
@@ -182,7 +213,8 @@ CodeSegment segment
 
         Call ReadCL
     exit:
-        Mov ax, 4C00h
+        Mov al, 00h
+        Mov ah, 4Ch
         Int 21h
 
 
