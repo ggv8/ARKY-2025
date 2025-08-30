@@ -41,7 +41,9 @@ DataSegment segment
     ; State Machine
         STATE_DEFAULT = 00h
         STATE_HELP    = 01h
-        STATE_ERROR   = 80h
+        ; 80h to FFh are reserved for errors, 80h is a failsafe state
+        STATE_ERROR = 80h
+        ERROR_TEST  = 81h
     ;
 
     ; Misc
@@ -55,7 +57,8 @@ DataSegment segment
     helpMe  db "Debe ingresar los siguientes datos:", CHAR_CR, CHAR_LF
             db CHAR_NULL
     errorLabel db "Error: ", CHAR_NULL
-    errorMsg1  db "Ha ocurrido un error inesperado", CHAR_NULL
+    errorNoState  db "El programa ha generado un error inesperado.", CHAR_NULL
+    errorTestMsg  db "Este es un error de prueba para el vector de errores.", CHAR_NULL
 ;
 
 ; Look-up Tables
@@ -66,9 +69,9 @@ DataSegment segment
                dw PrintHelp
     tableSize = ($ - stateTable) / stateOffset
                db STATE_ERROR   ; Fail safe state
-               dw PrintAX
+               dw PrintError
 
-    errorTable dw offset errorMsg1
+    errorVector dw offset errorNoState, offset errorTestMsg
 ;
 
     programState db STATE_DEFAULT
@@ -176,7 +179,7 @@ CodeSegment segment
 
     ; Print the program's help message
     ; Inputs: N/A
-    ; Outputs: Reads aboutMe str to standard output, followed by a newline
+    ; Outputs: Reads helpMe str to standard output, followed by a newline
     PrintHelp proc
         Push si
 
@@ -187,6 +190,30 @@ CodeSegment segment
         Pop si
         Ret
     PrintHelp endP
+
+    ; Prints an error message based on the program's current state
+    ; Inputs: Expects an error state in programState variable
+    ; Outputs> Reads the error message to standard output, followed by a newline
+    PrintError proc
+        Push bx
+        Push si
+
+        Mov si, offset errorLabel
+        Call PrintLikeC
+
+        xor bh, bh
+        Mov bl, programState ; Copy to use as index
+        Sub bx, 80h ; Adjust offset for errorState
+        Shl bx, 1   ; x2 to adjust for word-sized elements
+
+        Mov si, errorVector[bx] ; Find errorStr address
+        Call PrintLikeC
+        Call PrintCRLF
+
+        Pop si
+        Pop bx
+        Ret
+    PrintError endP
 
     ; Reads the command line's input back to the standard output
     ; Inputs: Expects any input in command line
@@ -247,7 +274,7 @@ CodeSegment segment
         Pop si
         Pop dx
         Pop cx
-        ret
+        Ret
     RunStateMachine endP
     
 
@@ -262,7 +289,7 @@ CodeSegment segment
         Mov ds, ax ; Set data's address
 
 
-        Mov programState, STATE_HELP
+        Mov programState, STATE_ERROR
         Xor ax, ax
         Mov al, programState
         Call RunStateMachine
