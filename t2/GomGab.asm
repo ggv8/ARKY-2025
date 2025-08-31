@@ -70,6 +70,7 @@ DataSegment segment
 
     ; Misc
         PSP_INPUT_OFFSET = 80h
+        NULL_FRACTION  = 0000h ; For simplification tests
     ;
 ;
 
@@ -113,6 +114,7 @@ DataSegment segment
 
     fraction1 dw 0001h ; Defaults to 0/1
     fraction2 dw 0001h
+    result dw 0101h
 DataSegment endS
 
 StackSegment segment stack 'stack'
@@ -401,6 +403,71 @@ CodeSegment segment
         Ret
     ReadFraction endP
 
+    ; Auxiliary to SimplifyFraction, Finds first common divisor in a range
+    ; Inputs: CL - (n) range limit, min(numerator, denominator) of result fraction
+    ; Outputs: DX - Simplified fraction if possible. Empty if fraction can't be simplified
+    FindFactor proc
+        Xor ch, ch
+        Inc ch      ; (i): Use CH as control var for iteration
+
+    ITER_FindFactor:  ; From i=2 to n, inclusive
+        Xor dx, dx              ; To store partial simplifications
+        Inc ch                  ; Try next number (begin with i=2)
+        Cmp ch, cl              
+        Ja END_FindFactor ; If not within range halt (jA to be inclusive, e.g (i=2)(n=2)[2/4 => 1/2])
+
+        ; Test numerator / n
+        Xor ax, ax
+        Mov al, byte ptr [result+byte]
+        Div ch
+        Cmp ah, 0           ; No remainder implies even division
+        Jne ITER_FindFactor ; If not even, discard and try another
+
+        Mov dh, al ; Store quotient as new potential numerator
+
+        ; Test denominator / n
+        Xor ax, ax
+        Mov al, byte ptr [result]
+        Div ch
+        Cmp ah, 0
+        Jne ITER_FindFactor ; Discard if not a factor of both, try another
+
+        Mov dl, al ; Store quotient as new denominator, DX contains new partial simplification of result
+    END_FindFactor:
+        Ret
+    FindFactor endP
+
+    ; Attempts to fully simplify the fraction result
+    ; Inputs: result - Expects a valid fraction in the variable
+    ; Outputs: result - Sets most simplified fraction possible in variable
+    SimplifyFraction proc
+        Push ax
+        Push cx
+        Push dx
+
+    ITER_SimplifyFraction:
+        ; Find min(numerator, denominator) for current simplified fraction
+        Mov cx, result
+        Cmp ch, cl                ; Which is greater between numerator and denominator?
+        Jge AUX_SimplifyFraction  ; If CL already has smaller number, proceed to algorithm
+        Xchg ch, cl               ; Otherwise, set greater number in ah
+
+    AUX_SimplifyFraction:
+        Call FindFactor         ; Attempt to find factor and simplify fraction
+        Cmp dx, NULL_FRACTION
+        Je END_SimplifyFraction ; If no factor can be found, fraction is fully simplified
+        
+        Mov result, dx ; Update stored result with partial simplification
+        Jmp ITER_SimplifyFraction ; Repeat until fully simplified
+
+    END_SimplifyFraction:
+        Pop dx
+        Pop cx
+        Pop ax
+        Ret
+    SimplifyFraction endP
+
+
     ; Finds row with state code and routine address corresponding to current program state
     ; Inputs: programState - Expects a valid state code in variable
     ; Outputs: BX with row address in stateTable. If invalid, BX points to failsafe row
@@ -471,22 +538,47 @@ CodeSegment segment
         ;Xor ax, ax
         ;Mov al, programState
         ;Call RunState
-        Call ReadInput
+        ;Call ReadInput
 
-        Mov base, 10h
-        Mov ax, fraction1
+        ;Mov base, 10h
+        ;Mov ax, fraction1
+        ;Call PrintAX
+        ;Call PrintCRLF
+
+        ;Mov ax, programState
+        ;Call PrintAX
+        ;Call PrintCRLF
+
+        ;Mov ax, fraction2
+        ;Call PrintAX
+        ;Call PrintCRLF
+
+        ;Call RunState
+
+        ;Mov result, 9ABEh   ;154/190 = 77/95
+        ;Mov result, 8498h   ;132/152 = 33/38
+        ;Mov result, 0BBF7h  ;187/247
+        ;Mov result, 0408h   ;4/8 = 1/2
+        ;Mov result, 0204h   ;2/4 = 1/2
+        ;Mov result, 0102h   ;1/2
+        ;Mov result, 1B12h   ;27/18 = 3/2
+        ;Mov result, 0BDCh   ;11/220 = 1/20
+        ;Mov result, 21DCh   ;33/220 = 3/20
+        Mov result, 0E6FDh  ;230/253 = 10/11
+        ;Mov result, 0FBFBh  ;251/251 = 1/1
+        Call SimplifyFraction
+
+        Mov ax, result
+        Xchg ah, al
+        Xor ah, ah
         Call PrintAX
         Call PrintCRLF
 
-        Mov ax, programState
+        Mov ax, result
+        Xor ah, ah
         Call PrintAX
         Call PrintCRLF
 
-        Mov ax, fraction2
-        Call PrintAX
-        Call PrintCRLF
-
-        Call RunState
     exit:
         Mov al, 00h
         Mov ah, 4Ch
