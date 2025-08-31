@@ -2,7 +2,7 @@
     ; ╔═════════════════════════════════════╦═══════════════════════════════════╗
     ; ║ Instituto Tecnologico de Costa Rica ║ Gabriel Gomez Vega                ║
     ; ║ Escuela de Computacion              ║ 2021106483                        ║
-    ; ║ Arquitectura de Computadoras        ║ DD de MM del 2025                 ║
+    ; ║ Arquitectura de Computadoras        ║ 01 de Setiembre del 2025          ║
     ; ╚═════════════════════════════════════╩═══════════════════════════════════╝
     ; ╔═════════════════════════════════════════════════════════════════════════╗
     ; ║                            Manual de Usuario                            ║
@@ -16,9 +16,21 @@
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
     ; ║ Documentacion                                            ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Documentacion                                            ║      A       ║
+    ; ║ Despliegue del Acerca De                                 ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Documentacion                                            ║      A       ║
+    ; ║ Despliegue de la Ayuda                                   ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Lectura de la entrada                                    ║      -       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Restricciones de la entrada                              ║      -       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Implementacion de las operaciones aritmeticas            ║      -       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Simplificacion y despliegue del resultado                ║      -       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Despliegue del resultado alfabeticamente                 ║      -       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Despliegue de mensajes de error                          ║      -       ║
     ; ╚══════════════════════════════════════════════════════════╩══════════════╝
 ;
 
@@ -36,14 +48,20 @@ DataSegment segment
         CHAR_CR    = 0Dh
         CHAR_LF    = 0Ah
         CHAR_SPACE = 20h
+        CHAR_HTAB  = 09h
     ;
 
     ; State Machine
         STATE_DEFAULT = 00h
         STATE_HELP    = 01h
         ; 80h to FFh are reserved for errors, 80h is a failsafe state
-        STATE_ERROR = 80h
-        ERROR_TEST  = 81h
+        STATE_ERROR     = 80h
+        ERROR_NUM_OF    = 81h
+        ERROR_DEN_OF    = 82h
+        ERROR_ZERODIV   = 83h
+        ERROR_CALC_OF   = 84h
+        ERROR_CALC_ZD   = 85h
+        ERROR_OPCODE    = 86h
     ;
 
     ; Misc
@@ -52,13 +70,23 @@ DataSegment segment
 ;
 
 ; String literals
-    aboutMe db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. DD/MM/2025", CHAR_CR, CHAR_LF
-            db "Tarea --- | Autor: Gabriel Gomez Vega, 2021106483", CHAR_NULL
-    helpMe  db "Debe ingresar los siguientes datos:", CHAR_CR, CHAR_LF
-            db CHAR_NULL
-    errorLabel db "Error: ", CHAR_NULL
+    aboutMe db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. 01/09/2025", CHAR_CR, CHAR_LF
+            db "Tarea El Fracturador | Autor: Gabriel Gomez Vega, 2021106483", CHAR_NULL
+
+    helpMe  db "Debe ingresar los siguientes datos: -fraccion1 -operador -fraccion2", CHAR_CR, CHAR_LF, CHAR_LF
+            db CHAR_HTAB, "Cada fraccion se expresa como '{numerador}/{denominador}'", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Sus rangos son de 0 a 255 y 1 a 255 respectivamente.", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Los operadores permitidos son +, -, x, %", CHAR_NULL
+
+    errorLabel    db "Error: ", CHAR_NULL
+
     errorNoState  db "El programa ha generado un error inesperado.", CHAR_NULL
-    errorTestMsg  db "Este es un error de prueba para el vector de errores.", CHAR_NULL
+    errorNumOF    db "El numerador esta fuera del rango permitido (0 a 255).", CHAR_NULL
+    errorDenOF    db "El denominador esta fuera del rango permitido (1 a 255)", CHAR_NULL
+    errorZeroDiv  db "El denominador de una fraccion no puede ser 0.", CHAR_NULL
+    errorCalcOF   db "El calculo de esta operacion excede el rango permitido.", CHAR_NULL
+    errorCalcZD   db "La operacion no es permitida ya que provoca una division por 0", CHAR_NULL
+    errorOpCode   db "No se permite el operador ingresado.", CHAR_NULL
 ;
 
 ; Look-up Tables
@@ -71,11 +99,15 @@ DataSegment segment
                db STATE_ERROR   ; Fail safe state
                dw PrintError
 
-    errorVector dw offset errorNoState, offset errorTestMsg
+    errorVector dw offset errorNoState, offset errorNumOF, offset errorDenOF, offset errorZeroDiv
+                dw offset errorCalcOF, offset errorCalcZD, offset errorOpCode
 ;
 
     programState db STATE_DEFAULT
     base dw 10
+
+    fraction1 dw 0001h ; Defaults to 0/1
+    fraction2 dw 0001h
 DataSegment endS
 
 StackSegment segment stack 'stack'
@@ -251,7 +283,7 @@ CodeSegment segment
     ReadCL endP
 
     ; Reads the command line's input and stores parameters if present
-    ; Inputs: Expects ...
+    ; Inputs: Expects two fractional numbers and an operator, inorder
     ; Outputs: Stores values in data variables, and flags errors if necessary
     ReadInput proc
         Push ax
@@ -302,7 +334,6 @@ CodeSegment segment
         Pop cx
         Ret
     RunStateMachine endP
-    
 
     main:
         Mov ax, ds
@@ -315,7 +346,7 @@ CodeSegment segment
         Mov ds, ax ; Set data's address
 
 
-        Mov programState, STATE_ERROR
+        Mov programState, ERROR_OPCODE
         Xor ax, ax
         Mov al, programState
         Call RunStateMachine
