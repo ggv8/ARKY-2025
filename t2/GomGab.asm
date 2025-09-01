@@ -128,32 +128,32 @@ CodeSegment segment
     ; supone que es un n�mero positivo y natural en 16 bits.
     ; lo imprime en la base que indica la variable Base del Data Segment.  
     PrintAX proc near    
-        push AX
-        push BX
-        push CX                           
-        push DX
+        Push ax
+        Push bx
+        Push cx                           
+        Push dx
 
-        xor cx, cx
-        mov bx, base
-    ciclo1PAX: xor dx, dx
-        div bx
-        push dx
-        inc cx
-        cmp ax, 0
-        jne ciclo1PAX
-        mov ah, DOS_PRINT_CHAR
-    ciclo2PAX: pop DX
-        add dl, 30h
-        cmp dl, 39h
-        jbe prnPAX
-        add dl, 7
-    prnPAX: int 21h
-        loop ciclo2PAX 
+        Xor cx, cx
+        Mov bx, base
+    ciclo1PAX: Xor dx, dx
+        Div bx
+        Push dx
+        Inc cx
+        Cmp ax, 0
+        Jne ciclo1PAX
+        Mov ah, DOS_PRINT_CHAR
+    ciclo2PAX: Pop dx
+        Add dl, 30h
+        Cmp dl, 39h
+        Jbe prnPAX
+        Add dl, 7
+    prnPAX: Int 21h
+        Loop ciclo2PAX 
 
-        pop DX
-        pop CX
-        pop BX
-        pop AX
+        Pop dx
+        Pop cx
+        Pop bx
+        Pop ax
         ret
     PrintAX endP
 
@@ -643,6 +643,38 @@ CodeSegment segment
         Ret
     SubtractFractions endP
 
+    ; Displays the simplified result of a fraction operation and its alphabetic equivalent
+    ; Inputs: Expects valid fraction values in result variable
+    ; Outputs: Sends the fraction and its alphabetic result to the standard output
+    PrintResult proc
+        Push ax
+        Push dx
+
+        Call SimplifyFraction
+
+        Xor ax, ax
+        Mov al, byte ptr [result+byte] ; Access numerator first
+        Call PrintAX
+
+        ; Print fraction line
+        Xor al, al
+        Mov ah, DOS_PRINT_CHAR
+        Xor dh, dh
+        Mov dl, '/'
+        Int 21h
+
+        Xor ax, ax
+        Mov al, byte ptr [result] ; Print denominator
+        Call PrintAX
+        Call PrintCRLF
+
+        ; Routine that prints result alphabetically
+
+        Pop dx
+        Pop ax
+        Ret
+    PrintResult endP
+
     ; Finds row with state code and routine address corresponding to current program state
     ; Inputs: programState - Expects a valid state code in variable
     ; Outputs: BX with row address in stateTable. If invalid, BX points to failsafe row
@@ -730,9 +762,9 @@ CodeSegment segment
 
         ;Call RunState
 
-        Mov fraction1, 0505h
-        Mov fraction2, 0102h
-        Call SubtractFractions
+        Mov fraction1, 0203h
+        Mov fraction2, 0506h
+        Call AddFractions
 
         Mov base, 16
         Mov ax, programState
@@ -740,18 +772,7 @@ CodeSegment segment
         Call PrintCRLF
         Call PrintCRLF
         
-        Call SimplifyFraction
-
-        Mov ax, result
-        Xchg ah, al
-        Xor ah, ah
-        Call PrintAX
-        Call PrintCRLF
-
-        Mov ax, result
-        Xor ah, ah
-        Call PrintAX
-        Call PrintCRLF
+        Call PrintResult
 
     exit:
         Mov al, 00h
