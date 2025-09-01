@@ -89,7 +89,7 @@ DataSegment segment
     errorNumOF    db "El numerador esta fuera del rango permitido (0 a 255).", CHAR_NULL
     errorDenOF    db "El denominador esta fuera del rango permitido (1 a 255)", CHAR_NULL
     errorZeroDiv  db "El denominador de una fraccion no puede ser 0.", CHAR_NULL
-    errorCalcOF   db "El calculo de esta operacion excede el rango permitido.", CHAR_NULL
+    errorCalcOF   db "El calculo de esta operacion require exceder el rango permitido.", CHAR_NULL
     errorCalcZD   db "La operacion no es permitida ya que provoca una division por 0", CHAR_NULL
     errorOpCode   db "No se permite el operador ingresado.", CHAR_NULL
 ;
@@ -100,8 +100,8 @@ DataSegment segment
                dw STATE_HELP, PrintHelp
                dw STATE_MUL, LinearProduct
                dw STATE_DIV, CrossedProduct
-               dw STATE_ADD, PrintAX
-               dw STATE_SUB, PrintAX
+               dw STATE_ADD, AddFractions
+               dw STATE_SUB, SubtractFractions
     tableSize = ($ - stateTable) / stateOffset
                dw ERROR_OPCODE, PrintError ; Fail safe state
 
@@ -555,6 +555,94 @@ CodeSegment segment
         Ret
     CrossedProduct endP
 
+    ; Homogenizes fractions if they are not already homogenous
+    ; Inputs: Expects valid fraction values in operand variables
+    ; Outputs: Places the new operands in BX and CX respectively
+    HomogenizeFractions proc
+        Push dx
+        Push result ; Used for intermediate results
+
+        Mov dx, fraction2            ; Obtain copy for mem to mem comparison
+        Cmp dl, byte ptr [fraction1]
+        Je CASE_Homogenized          ; Skip algorithm if already homogenous
+
+        ; Homogenizes (a/b) + (c/d) like this: (a/b)(d/d) + (b/b)(c/d)
+
+        Mov dh, dl          ; Obtain (d/d)
+        Xchg dx, fraction2  ; Backup (c/d) and prep multiplication in one go
+        Call LinearProduct  ; Obtain (a/b)(d/d) in result
+        Mov bx, result
+
+        Mov fraction2, dx   ; Restore (c/d) operand
+        Mov dx, fraction1   ; Backup (a/b)
+        Mov byte ptr [fraction1+byte], dl ; Move b to hi-byte, obtain (b/b)
+        Call LinearProduct  ; Obtain (b/b)(c/d) in result
+        Mov cx, result
+
+        Mov fraction1, dx ; Restore (a/b) operand
+        Jmp END_HomogenizeFractions ; Skip already-homogenized logic
+
+    CASE_Homogenized:
+        Mov bx, fraction1
+        Mov cx, dx ; Copy 2nd operand from dx
+
+    END_HomogenizeFractions:
+        Pop result
+        Pop dx
+        Ret
+    HomogenizeFractions endP
+
+    ; Adds two fractions and saves the result
+    ; Inputs: Expects valid fraction values in operand variables
+    ; Outputs: Obtains the sum and places it in result variable
+    AddFractions proc
+        Push bx
+        Push cx
+
+        Call HomogenizeFractions        ; Prep bx and cx with homogenized operands
+        Cmp programState, ERROR_CALC_OF
+        Je END_AddFractions         ; Halt if homogenization caused overflow
+        
+        Add bh, ch      ; Sum numerators
+        Jc FLAG_AddOF   ; Halt if sum exceeds byte capacity
+        
+        Mov result, bx ; Save result
+        Jmp END_AddFractions
+
+    FLAG_AddOF:
+        Mov programState, ERROR_CALC_OF
+    END_AddFractions:
+        Pop cx
+        Pop bx
+        Ret
+    AddFractions endP
+
+    ; Subtracts two fractions and saves the result
+    ; Inputs: Expects valid fraction values in operand variables
+    ; Outputs: Obtains the sum and places it in result variable
+    SubtractFractions proc
+        Push bx
+        Push cx
+
+        Call HomogenizeFractions        ; Prep bx and cx with homogenized operands
+        Cmp programState, ERROR_CALC_OF
+        Je END_SubtractFractions      ; Halt if homogenization caused overflow
+        
+        
+        Sub bh, ch      ; Subtract 2nd numerator from 1st
+        Jc FLAG_SubOF   ; Halt if source > destination
+        
+        Mov result, bx ; Save result
+        Jmp END_SubtractFractions
+
+    FLAG_SubOF:
+        Mov programState, ERROR_CALC_OF
+    END_SubtractFractions:
+        Pop cx
+        Pop bx
+        Ret
+    SubtractFractions endP
+
     ; Finds row with state code and routine address corresponding to current program state
     ; Inputs: programState - Expects a valid state code in variable
     ; Outputs: BX with row address in stateTable. If invalid, BX points to failsafe row
@@ -642,9 +730,9 @@ CodeSegment segment
 
         ;Call RunState
 
-        Mov fraction1, 0405h
+        Mov fraction1, 0505h
         Mov fraction2, 0102h
-        Call LinearProduct
+        Call SubtractFractions
 
         Mov base, 16
         Mov ax, programState
