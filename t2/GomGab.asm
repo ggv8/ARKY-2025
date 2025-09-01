@@ -98,8 +98,8 @@ DataSegment segment
     stateTable dw STATE_DEFAULT, PrintAboutMe
     stateOffset = ($ - stateTable)
                dw STATE_HELP, PrintHelp
-               dw STATE_MUL, PrintAX
-               dw STATE_DIV, PrintAX
+               dw STATE_MUL, LinearProduct
+               dw STATE_DIV, CrossedProduct
                dw STATE_ADD, PrintAX
                dw STATE_SUB, PrintAX
     tableSize = ($ - stateTable) / stateOffset
@@ -449,8 +449,8 @@ CodeSegment segment
         ; Find min(numerator, denominator) for current simplified fraction
         Mov cx, result
         Cmp ch, cl                ; Which is greater between numerator and denominator?
-        Jge AUX_SimplifyFraction  ; If CL already has smaller number, proceed to algorithm
-        Xchg ch, cl               ; Otherwise, set greater number in ah
+        Jae AUX_SimplifyFraction  ; If CL already has smaller number, proceed to algorithm
+        Xchg ch, cl               ; Otherwise, set greater number in ch
 
     AUX_SimplifyFraction:
         Call FindFactor         ; Attempt to find factor and simplify fraction
@@ -467,6 +467,93 @@ CodeSegment segment
         Ret
     SimplifyFraction endP
 
+    ; Multiplies a fraction with another fraction
+    ; Inputs: BX - First fraction operand, CX - Second fraction operand
+    ; Outputs: Places the result in DX:AX
+    MultiplyFractions proc
+        Xor ax, ax
+        Mov al, bh
+        Mul ch
+        Mov dx, ax  ; DX = bh x ch numerator
+
+        Xor ax, ax
+        Mov al, bl
+        Mul cl      ; AX = bl x cl
+        Ret
+    MultiplyFractions endP
+
+    ; Multiplies fraction1 with fraction2, performs error checking
+    ; Inputs: Expects valid fractional values in the fraction1 and fraction2 variables
+    ; Outputs: Obtains the product and places it in result variable
+    LinearProduct proc
+        Push ax
+        Push bx
+        Push cx
+        Push dx
+        ; Prep fractions in registers
+        Mov bx, fraction1
+        Mov cx, fraction2
+        Call MultiplyFractions
+
+        ; Restrict overflow after multiplication
+        Cmp dh, 0
+        Jne FLAG_ProductOF ; If numerator product exceeds byte range, flag of error
+        Cmp ah, 0
+        Jne FLAG_ProductOF ; Same goes for denominator product
+
+        Mov ah, dl        ; Move valid numerator in same reg as valid denominator
+        Mov result, ax    ; Store fraction result
+        Jmp END_LinearProduct
+
+    FLAG_ProductOF:
+        Mov programState, ERROR_CALC_OF
+    END_LinearProduct:
+        Pop dx
+        Pop cx
+        Pop bx
+        Pop ax
+        Ret
+    LinearProduct endP
+
+    ; Divides fraction1 with fraction2, performs error checking
+    ; Inputs: Expects valid fractional values in the fraction1 and fraction2 variables
+    ; Outputs: Obtains the product and places it in result variable
+    CrossedProduct proc
+        Push ax
+        Push bx
+        Push cx
+        Push dx
+
+        Mov cx, fraction2
+        Cmp ch, 0
+        Je FLAG_CalcZeroDiv ; 2nd operand's numerator can't be zero for division
+
+        Mov bx, fraction1 ; Set 1st operand
+        Xchg ch, cl       ; Set 2nd operand with swapped values
+        Call MultiplyFractions
+        
+        ; Restrict overflow after division
+        Cmp dh, 0
+        Jne FLAG_DivisionOF ; If numerator product exceeds byte range, flag of error
+        Cmp ah, 0
+        Jne FLAG_DivisionOF ; Same goes for denominator product
+
+        Mov ah, dl        ; Move valid numerator in same reg as valid denominator
+        Mov result, ax    ; Store fraction result
+        Jmp END_CrossedProduct
+
+    FLAG_CalcZeroDiv:
+        Mov programState, ERROR_CALC_ZD
+        Jmp END_CrossedProduct
+    FLAG_DivisionOF:
+        Mov programState, ERROR_CALC_OF
+    END_CrossedProduct:
+        Pop dx
+        Pop cx
+        Pop bx
+        Pop ax
+        Ret
+    CrossedProduct endP
 
     ; Finds row with state code and routine address corresponding to current program state
     ; Inputs: programState - Expects a valid state code in variable
@@ -555,17 +642,16 @@ CodeSegment segment
 
         ;Call RunState
 
-        ;Mov result, 9ABEh   ;154/190 = 77/95
-        ;Mov result, 8498h   ;132/152 = 33/38
-        ;Mov result, 0BBF7h  ;187/247
-        ;Mov result, 0408h   ;4/8 = 1/2
-        ;Mov result, 0204h   ;2/4 = 1/2
-        ;Mov result, 0102h   ;1/2
-        ;Mov result, 1B12h   ;27/18 = 3/2
-        ;Mov result, 0BDCh   ;11/220 = 1/20
-        ;Mov result, 21DCh   ;33/220 = 3/20
-        Mov result, 0E6FDh  ;230/253 = 10/11
-        ;Mov result, 0FBFBh  ;251/251 = 1/1
+        Mov fraction1, 0405h
+        Mov fraction2, 0102h
+        Call LinearProduct
+
+        Mov base, 16
+        Mov ax, programState
+        Call PrintAX
+        Call PrintCRLF
+        Call PrintCRLF
+        
         Call SimplifyFraction
 
         Mov ax, result
