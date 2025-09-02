@@ -92,21 +92,98 @@ DataSegment segment
     errorCalcOF   db "El calculo de esta operacion require exceder el rango permitido.", CHAR_NULL
     errorCalcZD   db "La operacion no es permitida ya que provoca una division por 0", CHAR_NULL
     errorOpCode   db "No se permite el operador ingresado.", CHAR_NULL
+
+    unitSpellings db      "cero", CHAR_NULL
+                  db       "uno", CHAR_NULL
+                  db       "dos", CHAR_NULL
+                  db      "tres", CHAR_NULL
+                  db    "cuatro", CHAR_NULL
+                  db     "cinco", CHAR_NULL
+                  db      "seis", CHAR_NULL
+                  db     "siete", CHAR_NULL
+                  db      "ocho", CHAR_NULL
+                  db     "nueve", CHAR_NULL
+    tensSpellings   db      "diez", CHAR_NULL
+                    db    "veinte", CHAR_NULL
+                    db   "treinta", CHAR_NULL
+                    db  "cuarenta", CHAR_NULL
+                    db "cincuenta", CHAR_NULL
+                    db   "sesenta", CHAR_NULL
+                    db   "setenta", CHAR_NULL
+                    db   "ochenta", CHAR_NULL
+                    db   "noventa", CHAR_NULL
+                    db      "once", CHAR_NULL
+                    db      "doce", CHAR_NULL
+                    db     "trece", CHAR_NULL
+                    db   "catorce", CHAR_NULL
+                    db    "quince", CHAR_NULL
+
+    uniqueSpellings db       "s", CHAR_NULL ; e.g   1/2 "un medio" vs 3/2 "tres medios", 1/12 "un doceavo" vs 5/12 "cinco doceavos"
+                    db     " y ", CHAR_NULL ;       35 treinta y cinco
+                    db     "avo", CHAR_NULL ;       1/d, d > 10 y d != 10^k. 2/20 dos veinteavos
+                    db   "dieci", CHAR_NULL ;       16 dieciseis, 18 dieciocho
+                    db  "veinti", CHAR_NULL ;       20 veinte y 25 veinticinco
+                    db    "cien", CHAR_NULL ;       100
+                    db  "ciento", CHAR_NULL ;       105 ciento cinco
+                    db "cientos", CHAR_NULL ;       230 doscientos treinta
+                    db      "un", CHAR_NULL ;       1/8, un octavo, no uno octavo
+    
+    ; Symb.Const. to directly address unique spelling strings
+    SPELL_PTR_PLURAL        = offset uniqueSpellings +  0*byte
+    SPELL_PTR_AND           = offset uniqueSpellings +  2*byte
+    SPELL_PTR_DENOM_SUFFIX  = offset uniqueSpellings +  6*byte
+    SPELL_PTR_10_PREFFIX    = offset uniqueSpellings + 10*byte
+    SPELL_PTR_20_PREFFIX    = offset uniqueSpellings + 16*byte
+    SPELL_PTR_SINGLE_100    = offset uniqueSpellings + 23*byte
+    SPELL_PTR_100_PREFFIX   = offset uniqueSpellings + 28*byte
+    SPELL_PTR_100S_PREFFIX  = offset uniqueSpellings + 35*byte
+    SPELL_PTR_DENOM_ONE     = offset uniqueSpellings + 43*byte
+
+    denominatorSpellings db    "entero", CHAR_NULL
+                         db     "medio", CHAR_NULL
+                         db    "tercio", CHAR_NULL
+                         db    "cuarto", CHAR_NULL
+                         db    "quinto", CHAR_NULL
+                         db     "sexto", CHAR_NULL
+                         db    "setimo", CHAR_NULL
+                         db    "octavo", CHAR_NULL
+                         db    "noveno", CHAR_NULL
+                         db    "decimo", CHAR_NULL
+                         db "centesimo", CHAR_NULL
 ;
 
 ; Look-up Tables
     stateTable dw STATE_DEFAULT, PrintAboutMe
-    stateOffset = ($ - stateTable)
+    STATE_OFFSET = ($ - stateTable)
                dw STATE_HELP, PrintHelp
                dw STATE_MUL, LinearProduct
                dw STATE_DIV, CrossedProduct
                dw STATE_ADD, AddFractions
                dw STATE_SUB, SubtractFractions
-    tableSize = ($ - stateTable) / stateOffset
+    TABLE_SIZE = ($ - stateTable) / STATE_OFFSET
                dw ERROR_OPCODE, PrintError ; Fail safe state
 
     errorVector dw offset errorNoState, offset errorNumOF, offset errorDenOF, offset errorZeroDiv
                 dw offset errorCalcOF, offset errorCalcZD, offset errorOpCode
+
+    unitVector db 0, 5, 9, 13, 18, 25, 31, 36, 42, 47; Offsets from spelling variable
+
+    tensVector  db 0, 5, 12, 20, 29, 30, 38, 46, 54 ; Offsets from variable
+
+    uniqueTensVector db 0, 71, 76, 81, 87, 95
+
+    denominatorVector db   1,  0 ; Pair: Denominator value, offset from spelling variable
+                      db   2,  7
+                      db   3, 13
+                      db   4, 20
+                      db   5, 27
+                      db   6, 34
+                      db   7, 40
+                      db   8, 47
+                      db   9, 54
+                      db  10, 61
+                      db 100, 68
+    DENOMINATOR_CASES = ($ - denominatorVector) / word
 ;
 
     programState dw STATE_DEFAULT
@@ -180,7 +257,7 @@ CodeSegment segment
 
     ; Prints a string reference char by char until a null termination is found
     ; Inputs: SI - Address to string literal
-    ; Outputs: Sends each char to standard output via DOS' routine
+    ; Outputs: Sends each char to standard output via DOS's routine
     PrintLikeC proc
         Push ax
         Push dx
@@ -201,6 +278,20 @@ CodeSegment segment
         Pop ax
         Ret
     PrintLikeC endP
+
+    ; Prints a char value
+    ; Inputs: DL - Char byte
+    ; Outputs: Sends the byte to standard output via DOS's routine
+    PrintCharDL proc
+        Push ax
+
+        Xor al, al
+        Mov ah, DOS_PRINT_CHAR
+        Int 21h
+
+        Pop ax
+        Ret
+    PrintCharDL endP
 
     ; Print details about the program's creation
     ; Inputs: N/A
@@ -649,6 +740,7 @@ CodeSegment segment
     PrintResult proc
         Push ax
         Push dx
+        Push si
 
         Call SimplifyFraction
 
@@ -656,24 +748,250 @@ CodeSegment segment
         Mov al, byte ptr [result+byte] ; Access numerator first
         Call PrintAX
 
-        ; Print fraction line
-        Xor al, al
-        Mov ah, DOS_PRINT_CHAR
         Xor dh, dh
         Mov dl, '/'
-        Int 21h
+        Call PrintCharDL
 
-        Xor ax, ax
         Mov al, byte ptr [result] ; Print denominator
         Call PrintAX
         Call PrintCRLF
 
-        ; Routine that prints result alphabetically
+        Mov al, byte ptr [result+byte] ; Access numerator again
+        Cmp al, 1
+        Je AUX_PrintResult ; Edge case: Numerator 1 is spelled 'un', not 'uno'
 
+        Call SpellNumberAX
+        Jmp CASE_SpellDenominator
+ 
+    AUX_PrintResult:
+        Mov si, SPELL_PTR_DENOM_ONE
+        Call PrintLikeC
+    
+    CASE_SpellDenominator:
+        Mov dl, CHAR_SPACE
+        Call PrintCharDL
+        Mov dx, result
+        Call SpellDenominator
+
+    END_PrintResult:
+        Pop si
         Pop dx
         Pop ax
         Ret
     PrintResult endP
+
+    ; Prints the spelling of a single digit
+    ; Inputs: AX - Expects a single digit value within base 10
+    ; Outputs: Sends the spelling to the standard output
+    SpellUnits proc
+        Push bx
+        Push si
+
+        Cmp ax, base
+        Jae END_SpellUnits ; Print nothing if value is not a single digit
+
+        Xor bx, bx
+        Mov si, ax                      ; Use digit as index
+        Mov bl, byte ptr unitVector[si] ; Retrieve str offset associated to digit
+        Mov si, offset unitSpellings    ; Set base address
+        Add si, bx                      ; Apply offset to obtain str address
+        Call PrintLikeC
+        
+    END_SpellUnits:
+        Pop si
+        Pop bx
+        Ret
+    SpellUnits endP
+
+    ; Prints the contents of AL as the spelling of hundreds in a number
+    ; Inputs: AX = Digit of hundreds in number, BL = Remainder of number
+    ; Outputs: Sends the spelling to the standard output
+    SpellHundreds proc
+        Cmp al, 1
+        Jne AUX_SpellHundreds
+
+        Cmp bl, 0
+        Je CASE_LoneHundred ; Jump if number is 100. Otherwise, number is 1XX
+
+        Mov si, SPELL_PTR_100_PREFFIX ; Set correct str address
+        Jmp END_SpellHundreds
+
+    CASE_LoneHundred:
+        Mov si, SPELL_PTR_SINGLE_100 ; Set correct str address
+        Jmp END_SpellHundreds
+
+    AUX_SpellHundreds: ; Handle spelling for 2XX to 9XX
+        Call SpellUnits
+        Mov si, SPELL_PTR_100S_PREFFIX
+
+    END_SpellHundreds:
+        Call PrintLikeC     ; Address is already set, print spelling
+        Push dx
+        Xor dh, dh          ; Set whitespace in dl to finish printing
+        Mov dl, CHAR_SPACE
+        Call PrintCharDL
+        Pop dx
+        Ret
+    SpellHundreds endP
+
+    ; Prints the contents of AL as the spelling of tens in a number
+    ; Inputs: AX = Digit of tens in number, BL = Digit of units in number
+    ; Outputs: Sends spelling to standard output, sets CF set if units are explicit
+    SpellTens proc
+        Push ax
+        Push bx
+        Push si
+
+        Xor si, si
+        Cmp ax, 0
+        Je FLAG_ExplicitUnits ; No tens, remainder is between 1-9, skip to units
+
+        Cmp ax, 2
+        Jb TEST_UniqueTens    ; Handle printing for 10 to 19
+        Je TEST_Alt20Spelling ; Spelling from 21 to 29 differs slightly
+
+    CASE_DefaultTens: ; Default case: Regular spellings from 20 to 99
+        Add si, ax                ; Use tens digit to index entry
+        Dec si                    ; Adjust due to digit being offset by 1 in table
+
+        Mov al, byte ptr tensVector[si] ; Replace digit with offset to str
+        Mov si, offset tensSpellings    ; Set base address
+        Add si, ax                      ; Obtain corresponding str reference
+        Call PrintLikeC
+
+        Cmp bl, 0
+        Je FLAG_ImplicitUnits ; If multiple of ten, flag alert to not print unit zero
+        Mov si, SPELL_PTR_AND ; Otherwise, print 'and' separation
+        Call PrintLikeC
+        Jmp FLAG_ExplicitUnits
+    
+    TEST_Alt20Spelling:
+        Cmp bl, 0
+        Je CASE_DefaultTens ; Proceed with regular logic if number = 20
+        Mov si, SPELL_PTR_20_PREFFIX ; Otherwise, print special prefix
+        Call PrintLikeC
+        Jmp FLAG_ExplicitUnits
+
+    TEST_UniqueTens:
+        Cmp bl, 5
+        Jbe CASE_UniqueTens ; If number is 10-15, print with implicit units
+
+        Mov si, SPELL_PTR_10_PREFFIX ; Otherwise, print preffix for 10
+        Call PrintLikeC
+        Jmp FLAG_ExplicitUnits ; Flag alert to print units separetely
+
+    CASE_UniqueTens:
+        Mov bl, byte ptr uniqueTensVector[bx] ; Use unit as index to obtain entry
+        Mov si, offset tensSpellings          ; Set base address
+        Add si, bx                            ; Obtain str reference from offset entry
+        Call PrintLikeC
+        Jmp FLAG_ImplicitUnits ; Flag alert to not print units, they are implicit in unique tens
+
+    FLAG_ExplicitUnits:
+        Stc
+        Jmp END_SpellTens
+    FLAG_ImplicitUnits:
+        Clc
+    END_SpellTens:
+        Pop si
+        Pop bx
+        Pop ax
+        Ret
+    SpellTens endP
+    
+    ; Prints the contents of AX as the spelling of a number
+    ; Inputs: AX - Number value to spell
+    ; Outputs: Sends the spelling to the standard output
+    SpellNumberAX proc
+        Push ax
+        Push bx
+
+        Cmp ax, 0
+        Je CASE_SpellUnits ; If 0, spell it directly and halt
+
+        Xor bl, bl
+        Mov bh, 100
+        Div bh
+        Xchg bl, ah ; Isolate remainder in BL, empty AH to isolate quotient in AX
+
+        Cmp al, 0         ; Check quotient (digit in hundreds)
+        Je CASE_SpellTens ; If number < 100, skip to tens
+        Call SpellHundreds
+
+        Cmp bl, 0 ; Check remainder, if num is only hundreds digit, halt
+        Je END_SpellNumberAX
+
+    CASE_SpellTens:
+        Xchg al, bl ; Set remainder in AX
+        Xor bl, bl  ; Discard hundred's digit
+
+        Mov bh, 10
+        Div bh
+        Xchg bl, ah ; Isolate remainder in BL, empty AH to isolate quotient in AX
+
+        Xor bh, bh      ; Clear bh to isolate remainder over BX
+        Call SpellTens
+        Jnc END_SpellNumberAX ; Skip units if routine flagged them as implicit
+        Xchg al, bl ; Set remaining units in AX
+
+
+    CASE_SpellUnits:
+        Call SpellUnits
+
+    END_SpellNumberAX:
+        Pop bx
+        Pop ax
+        Ret
+    SpellNumberAX endP
+
+    ; Prints the spelling of a fraction's denominator
+    ; Inputs: DL - Number to be spelled, DH - Numerator of fraction
+    ; Outputs: Sends the spelling to the standard output
+    SpellDenominator proc
+        Push ax
+        Push cx
+        Push si
+
+        ; Check spelling case
+        Xor si, si                  ; Index = 0
+        Mov cx, DENOMINATOR_CASES   ; Set range limit
+    ITER_SpellDenominator:
+        Mov ax, word ptr denominatorVector[si] ; AH = Spelling offset, AL = Case value
+        Cmp al, dl
+        Je AUX_SpellDenominator ; Unique spelling found, handle accordingly (Case A)
+
+        Inc si
+        Inc si                      ; Point to next word entry
+        Loop ITER_SpellDenominator
+    
+    ; Case B: Spell number normally and add denominator suffix
+        Xor ax, ax
+        Mov al, dl
+        Call SpellNumberAX
+        Mov si, SPELL_PTR_DENOM_SUFFIX
+        Call PrintLikeC
+        Jmp TEST_PluralDenominator
+    
+    AUX_SpellDenominator:
+        Mov si, offset denominatorSpellings ; Set new base address
+        Mov al, ah
+        Xor ah, ah ; Isolate offset in low byte
+        Add si, ax ; Apply offset to base, SI now has address to exact string
+        Call PrintLikeC
+
+
+    TEST_PluralDenominator:
+        Cmp dh, 1
+        Je END_SpellDenominator ; Avoid plural spelling for numerator = 1
+
+        Mov si, SPELL_PTR_PLURAL ; Set exact str address before print
+        Call PrintLikeC
+    END_SpellDenominator:
+        Pop si
+        Pop cx
+        Pop ax
+        Ret
+    SpellDenominator endP
 
     ; Finds row with state code and routine address corresponding to current program state
     ; Inputs: programState - Expects a valid state code in variable
@@ -683,13 +1001,13 @@ CodeSegment segment
         Push dx
 
         Xor bx, bx           ; Base to address stateTable contents
-        Mov cx, tableSize
+        Mov cx, TABLE_SIZE
         Mov dx, programState ; Copy to reg for mem to mem comparison
 
     ITER_FindStateRoutine:
         Cmp dx, word ptr stateTable[bx]
         Je END_FindStateRoutine     ; Routine address found, halt
-        Add bx, stateOffset         ; Otherwise, point to next row
+        Add bx, STATE_OFFSET         ; Otherwise, point to next row
         Loop ITER_FindStateRoutine
         ; If out of range, BX points to failsafe state address
         Mov dx, word ptr stateTable[bx]
@@ -712,13 +1030,13 @@ CodeSegment segment
         Push si
 
         Xor si, si           ; Base to address stateTable contents
-        Mov cx, tableSize
+        Mov cx, TABLE_SIZE
         Mov dx, programState ; Copy to reg for mem to mem comparison
 
     ITER_RunState:
         Cmp dx, stateTable[si]
         Je EXEC_State               ; Routine found
-        Add si, stateOffset         ; Otherwise, point to next row
+        Add si, STATE_OFFSET         ; Otherwise, point to next row
         Loop ITER_RunState
         ; If out of range, SI points to failsafe, and executes it
     EXEC_State:
@@ -762,16 +1080,23 @@ CodeSegment segment
 
         ;Call RunState
 
-        Mov fraction1, 0203h
+        Mov fraction1, 0302h
         Mov fraction2, 0506h
-        Call AddFractions
+        ;Call AddFractions
 
         Mov base, 16
         Mov ax, programState
         Call PrintAX
         Call PrintCRLF
         Call PrintCRLF
-        
+
+        ;Mov ax, 15
+        ;Call SpellNumberAX
+
+        Mov base, 10
+        Mov ah, 25
+        Mov al, 255
+        Mov result, ax
         Call PrintResult
 
     exit:
