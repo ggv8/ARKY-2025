@@ -7,7 +7,37 @@
     ; ╔═════════════════════════════════════════════════════════════════════════╗
     ; ║                            Manual de Usuario                            ║
     ; ╠═════════════════════════════════════════════════════════════════════════╣
+    ; ║ Este programa toma dos numeros en notacion de fraccion y permite reali- ║
+    ; ║ zar operaciones aritmeticas con ellos. El resultado lo despliega en la  ║
+    ; ║ salida estandar. Se anticipan los siguientes parametros de entrada:     ║
+    ; ║         Fraccion: {numerador}/{denominador}                             ║
+    ; ║         - El numerador tiene un rango valido de 0 a 255                 ║
+    ; ║         - El denominador tiene un rango valido de 1 a 255               ║
+    ; ║         Operador: Permite los simbolos +, -, x, %                       ║
     ; ║                                                                         ║
+    ; ║ El formato de la entrada es: fraccion1 operador fraccion2               ║
+    ; ║                                                                         ║
+    ; ║ Si se solicita una suma o resta, se debe tomar en cuenta que el calcu-  ║
+    ; ║ lo no requiera almacenar pasos intermedios que superen el rango. Por    ║
+    ; ║ ejemplo, 1/200 + 4/13 requiere homogenizarse primero y su m.c.m es 2600 ║
+    ; ║ En general, el programa homogeniza por medio de un producto de un deno- ║
+    ; ║ minador a la otra fraccion y viceversa. No se simplifican los operandos ║
+    ; ║ solo el resultado de los mismo. Por ello, hay ciertos calculos que pue- ║
+    ; ║ den provocar error incluso si su equivalente entero cabe en el rango    ║
+    ; ║ como es el caso de 255/255 + 1/1                                        ║
+    ; ║                                                                         ║
+    ; ║ El programa retorna la respuesta en dos formatos. El primero es el mis- ║
+    ; ║ mo que el parametro, en notacion de fraccion. El otro es en prosa.      ║
+    ; ║ El programa siempre despliega un pequenno mensaje acerca del mismo      ║
+    ; ║ Si no ingresa ninguna entrada, despliega un corto mensaje de ayuda      ║
+    ; ║                                                                         ║
+    ; ║ El programa realiza validaciones de valores unicamente. Se espera que   ║
+    ; ║ el usuario ingrese el tipo de dato correcto. Es decir, que se ingresen  ║
+    ; ║ numeros y el simbolo de operacion donde corresponde, sin espacios extra ║
+    ; ║ de mas. Otras validaciones pertinentes son en el calculo. Si bien se    ║
+    ; ║ permite un numerador de 0 a 255, si se detecta que el operando es un    ║
+    ; ║ divisor, se detiene la ejecucion para evitar division entre 0.          ║
+    ; ║ Se validan los rangos tanto en las entradas como durante la ejecucion.  ║
     ; ╚═════════════════════════════════════════════════════════════════════════╝
     ; ╔═════════════════════════════════════════════════════════════════════════╗
     ; ║                        Analisis de Resultados                           ║
@@ -20,17 +50,17 @@
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
     ; ║ Despliegue de la Ayuda                                   ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Lectura de la entrada                                    ║      -       ║
+    ; ║ Lectura de la entrada                                    ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Restricciones de la entrada                              ║      -       ║
+    ; ║ Restricciones de la entrada                              ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Implementacion de las operaciones aritmeticas            ║      -       ║
+    ; ║ Implementacion de las operaciones aritmeticas            ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Simplificacion y despliegue del resultado                ║      -       ║
+    ; ║ Simplificacion y despliegue del resultado                ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Despliegue del resultado alfabeticamente                 ║      -       ║
+    ; ║ Despliegue del resultado alfabeticamente                 ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Despliegue de mensajes de error                          ║      -       ║
+    ; ║ Despliegue de mensajes de error                          ║      A       ║
     ; ╚══════════════════════════════════════════════════════════╩══════════════╝
 ;
 
@@ -54,6 +84,7 @@ DataSegment segment
     ; State Machine
         STATE_DEFAULT  = 00h
         STATE_HELP     = 01h
+        STATE_HALT     = 02h
         STATE_MUL      = 78h ; = 'x'
         STATE_DIV      = 25h ; = '%'
         STATE_ADD      = 2Bh ; = '+'
@@ -302,6 +333,7 @@ CodeSegment segment
         Mov si, offset aboutMe
         Call PrintLikeC
         Call PrintCRLF
+        Call PrintCRLF
 
         Pop si
         Ret
@@ -317,6 +349,7 @@ CodeSegment segment
         Call PrintLikeC
         Call PrintCRLF
 
+        Mov programState, STATE_HALT ; Set program to halt afterward
         Pop si
         Ret
     PrintHelp endP
@@ -339,6 +372,7 @@ CodeSegment segment
         Call PrintLikeC
         Call PrintCRLF
 
+        Mov programState, STATE_HALT ; Set program to halt afterward
         Pop si
         Pop bx
         Ret
@@ -1058,46 +1092,25 @@ CodeSegment segment
         Mov ax, DataSegment
         Mov ds, ax ; Set data's address
 
+        Call PrintAboutMe
+        Call ReadInput      ; May set an error state
 
-        ;Mov programState, ERROR_OPCODE
-        ;Xor ax, ax
-        ;Mov al, programState
-        ;Call RunState
-        ;Call ReadInput
+        ; If already in error state, it will handle it accordingly.
+        ; Otherwise, it will execute the proper operation which may flag another error
+        Call RunState ; If in error state, it will locate the routine to handle it
+                      ; Else it will execute the operation. However, errors may be flagged during it
 
-        ;Mov base, 10h
-        ;Mov ax, fraction1
-        ;Call PrintAX
-        ;Call PrintCRLF
+        Cmp programState, STATE_HALT ; If an input error was handled or no input was found, halt
+        Je exit
 
-        ;Mov ax, programState
-        ;Call PrintAX
-        ;Call PrintCRLF
+        Cmp programState, STATE_ERROR ; If a calculation error was detected during RunState, handle it
+        Jae catch
 
-        ;Mov ax, fraction2
-        ;Call PrintAX
-        ;Call PrintCRLF
+        Call PrintResult ; If no error was raised, print result
+        Jmp exit
 
-        ;Call RunState
-
-        Mov fraction1, 0302h
-        Mov fraction2, 0506h
-        ;Call AddFractions
-
-        Mov base, 16
-        Mov ax, programState
-        Call PrintAX
-        Call PrintCRLF
-        Call PrintCRLF
-
-        ;Mov ax, 15
-        ;Call SpellNumberAX
-
-        Mov base, 10
-        Mov ah, 25
-        Mov al, 255
-        Mov result, ax
-        Call PrintResult
+    catch:
+        Call PrintError
 
     exit:
         Mov al, 00h
