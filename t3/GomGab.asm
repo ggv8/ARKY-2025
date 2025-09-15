@@ -26,6 +26,7 @@ DataSegment segment
 ; Symbolic Constants
 
     ; Interruptions
+        DOS_INPUT_CHAR  = 01h
         DOS_PRINT_CHAR  = 02h
         DOS_PRINT_STR   = 09h
         DOS_EXIT        = 4Ch
@@ -88,6 +89,10 @@ DataSegment segment
             db CHAR_HTAB, STATE_FIBONACCI,": Calcular un valor de fibonacci", CHAR_CR, CHAR_LF
             db CHAR_HTAB, STATE_FACTORIAL,": Calcular factorial de un numero", CHAR_NULL
 
+    inputPrompt1 db "Digite el primer Gargantua: ", CHAR_NULL
+    inputPrompt2 db "Digite el segundo Gargantua: ", CHAR_NULL
+    inputPromptU db "Digite un Gargantua: ", CHAR_NULL
+
     errorLabel db "Error: ", CHAR_NULL
     errorNoState  db "El programa ha generado un error inesperado.", CHAR_NULL
     errorInvCmd   db "Se ha ingresado un comando invalido.", CHAR_NULL
@@ -121,11 +126,14 @@ DataSegment segment
     base dw 10
     programState dw STATE_DEFAULT
 
-    gargantuaA dw 00
-               db STATIC_LIMIT dup(0)
+    gargantuanA dw 00
+                db STATIC_LIMIT dup(0)
 
-    gargantuaB dw 00
-               db STATIC_LIMIT dup(0)
+    gargantuanB dw 00
+                db STATIC_LIMIT dup(0)
+    
+    gargantuanC dw 00
+                db STATIC_LIMIT dup(0)
 
 DataSegment endS
 
@@ -214,6 +222,33 @@ CodeSegment segment
         Ret
     PrintLikeC endP
 
+    ; Prints a gargantuan reference char by char until consumed
+    ; Inputs: SI - Address to gargantuan variable
+    ; Outputs: Sends each char to standard output via DOS' routine
+    PrintLikeG proc
+        Push ax
+        Push dx
+        Push si
+
+        Mov cx, word ptr [si]   ; Retrieve pascal counter (word)
+        Jcxz END_PrintLikeG
+        
+        Xor al, al
+        Mov ah, DOS_PRINT_CHAR
+        Inc si                  ; Point to upper byte in preparation for loop
+    ITER_PrintLikeG:
+        Inc si                  ; Point to next char
+        Mov dl, byte ptr [si]   ; Read char
+        Int 21h
+        Loop ITER_PrintLikeG
+
+    END_PrintLikeG:
+        Pop si
+        Pop dx
+        Pop ax
+        Ret
+    PrintLikeG endP
+
     ; Print details about the program's creation
     ; Inputs: N/A
     ; Outputs: Reads aboutMe str to standard output, followed by a newline
@@ -268,41 +303,6 @@ CodeSegment segment
         Ret
     PrintError endP
 
-    ; Reads the command line's input back to the standard output
-    ; Inputs: Expects any input in command line
-    ; Outputs: Sends input back to standard output
-    ReadCL proc
-        Push ax
-        Push bx
-        Push cx
-        Push dx
-
-        Mov bx, PSP_INPUT_OFFSET
-        Mov cl, byte ptr es:[bx]    ; Obtain input size from offset ptr
-
-        Cmp cl, 0
-        Je END_ReadCL   ; Skip if empty
-
-        Xor al, al
-        Mov ah, DOS_PRINT_CHAR
-        Xor dh, dh    ; Clear in prep for int
-
-        Dec cl ; Ignore extra whitespace count
-        Inc bx ; Point to input-preceding whitespace
-    ITER_ReadCL:
-        Inc bx      ; Point to next byte
-        Mov dl, byte ptr es:[bx]
-        Int 21h     ; Print current char
-        Loop ITER_ReadCL
-
-    END_ReadCL:
-        Pop dx
-        Pop cx
-        Pop bx
-        Pop ax
-        Ret
-    ReadCL endP
-
     ; Reads the command line's input and stores parameters if present
     ; Inputs: Expects a single char input that serves as a command
     ; Outputs: Stores values in data variables, and flags errors if necessary
@@ -347,6 +347,48 @@ CodeSegment segment
         Ret
     ReadInput endP
 
+    ; Asks the user for a gargantuan number input, and validates it
+    ; Inputs: [SI] - Address to input prompt, [DI] - Address to variable
+    ; Outputs: [DI] - Stores a valid input in gargantuan format
+    GargantuanInput proc
+        Push ax
+        Push bx
+
+        Mov bx, word         ; Set pointer after pascal size counter
+        Mov cx, STATIC_LIMIT ; Enforce limit based on allocated size for variable
+        Call PrintLikeC      ; Print prompt to std output
+    ITER_GargantuanInput:
+        Xor al, al
+        Mov ah, DOS_INPUT_CHAR
+        Int 21h
+
+        Cmp al, CHAR_CR
+        Je END_GargantuanInput ; Halt if user completed their input
+
+        Xor al, 30h  ; Assume input in range 30h-39h, mask upper nibble to obtain range 00h-09h
+        Cmp al, 10
+        Jae FLAG_InvalidInput ; Flag if input is not valid decimal digit
+
+        Xor al, 30h ; Restore original value
+        Inc word ptr [di]       ; Update var's pascal counter
+        Mov byte ptr di[bx], al ; Store input
+        Inc bx                  ; Point at next available area
+        Loop ITER_GargantuanInput
+
+    FLAG_InvalidInput:
+        Mov programState, ERROR_INV_IN
+    END_GargantuanInput:
+        ;Call PrintCRLF
+        Pop bx
+        Pop ax
+        Ret
+    GargantuanInput endP
+
+    GargantuanAddition proc
+        Ret
+    GargantuanAddition endP
+
+
     ; Prints AboutMe and validates user inputs
     ; Inputs: Expects a valid command line input
     ; Output: Sends AboutMe to standard output
@@ -364,6 +406,14 @@ CodeSegment segment
         Mov ax, programState
         Call PrintAX
         Call PrintCRLF
+
+        Mov si, offset inputPrompt1
+        Mov di, offset gargantuanA
+        Call GargantuanInput
+
+        Mov si, offset inputPrompt2
+        Mov di, offset gargantuanB
+        Call GargantuanInput
         Mov programState, STATE_HALT
         Pop ax
         Ret
