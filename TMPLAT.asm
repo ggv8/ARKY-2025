@@ -36,14 +36,17 @@ DataSegment segment
         CHAR_CR    = 0Dh
         CHAR_LF    = 0Ah
         CHAR_SPACE = 20h
+        CHAR_HTAB  = 09h
     ;
 
     ; State Machine
-        STATE_DEFAULT = 00h
-        STATE_HELP    = 01h
-        ; 80h to FFh are reserved for errors, 80h is a failsafe state
-        STATE_ERROR = 80h
-        ERROR_TEST  = 81h
+        STATE_HALT    = 0000h
+        STATE_DEFAULT = 0001h
+        STATE_HELP    = 0002h
+        STATE_EXAMPLE = 'A'
+        ; 8000h to FFFFh are reserved for errors, 8000h is a failsafe state
+        STATE_ERROR   = 8000h ; Used as reference for comparisons
+        ERROR_TEST    = 8001h
     ;
 
     ; Misc
@@ -55,26 +58,25 @@ DataSegment segment
     aboutMe db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. DD/MM/2025", CHAR_CR, CHAR_LF
             db "Tarea --- | Autor: Gabriel Gomez Vega, 2021106483", CHAR_NULL
     helpMe  db "Debe ingresar los siguientes datos:", CHAR_CR, CHAR_LF
-            db CHAR_NULL
+            db CHAR_HTAB, "{parametro}: {explicacion}", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "{parametro}: {explicacion}", CHAR_NULL
     errorLabel db "Error: ", CHAR_NULL
     errorNoState  db "El programa ha generado un error inesperado.", CHAR_NULL
     errorTestMsg  db "Este es un error de prueba para el vector de errores.", CHAR_NULL
 ;
 
 ; Look-up Tables
-    stateTable db STATE_DEFAULT
-               dw PrintAboutMe
-    stateOffset = ($ - stateTable)
-               db STATE_HELP
-               dw PrintHelp
-    tableSize = ($ - stateTable) / stateOffset
-               db STATE_ERROR   ; Fail safe state
-               dw PrintError
+    stateTable dw STATE_DEFAULT, StartProgram
+    STATE_OFFSET = ($ - stateTable)
+               dw STATE_HELP, PrintHelp
+               dw STATE_EXAMPLE, ExampleRoutine
+    TABLE_SIZE = ($ - stateTable) / STATE_OFFSET
+               dw STATE_ERROR, PrintError ; Fail safe state
 
     errorVector dw offset errorNoState, offset errorTestMsg
 ;
 
-    programState db STATE_DEFAULT
+    programState dw STATE_DEFAULT
     base dw 10
 DataSegment endS
 
@@ -172,6 +174,7 @@ CodeSegment segment
         Mov si, offset aboutMe
         Call PrintLikeC
         Call PrintCRLF
+        Call PrintCRLF
 
         Pop si
         Ret
@@ -187,6 +190,7 @@ CodeSegment segment
         Call PrintLikeC
         Call PrintCRLF
 
+        Mov programState, STATE_HALT ; Set program to halt afterward
         Pop si
         Ret
     PrintHelp endP
@@ -201,15 +205,15 @@ CodeSegment segment
         Mov si, offset errorLabel
         Call PrintLikeC
 
-        xor bh, bh
-        Mov bl, programState ; Copy to use as index
-        Sub bx, 80h ; Adjust offset for errorState
+        Mov bx, programState ; Copy to use as index
+        Sub bx, STATE_ERROR  ; Adjust offset for an error state
         Shl bx, 1   ; x2 to adjust for word-sized elements
 
         Mov si, errorVector[bx] ; Find errorStr address
         Call PrintLikeC
         Call PrintCRLF
 
+        Mov programState, STATE_HALT ; Set program to halt afterward
         Pop si
         Pop bx
         Ret
@@ -266,6 +270,7 @@ CodeSegment segment
         Inc bx ; Point to first char
         
         ; Insert detailed logic here
+        Mov programState, STATE_EXAMPLE ; Placeholder
 
         Jmp END_ReadInput  ; Skip error flagging line
     FLAG_NoInput:
@@ -276,32 +281,79 @@ CodeSegment segment
         Ret
     ReadInput endP
 
+    ; Prints AboutMe and validates user inputs
+    ; Inputs: Expects a valid command line input
+    ; Output: Sends AboutMe to standard output
+    StartProgram proc
+        Call PrintAboutMe
+        Call ReadInput
+        Ret
+    StartProgram endP
+
+    ; Routine for example state
+    ; Inputs: ...
+    ; Outputs: Sets programState to halt if no error occured
+    ExampleRoutine proc
+        Call PrintAX
+        Call PrintCRLF
+        Mov programState, STATE_HALT
+        Ret
+    ExampleRoutine endP
+
+    ; Finds row with state code and routine address corresponding to current program state
+    ; Inputs: programState - Expects a valid state code in variable
+    ; Outputs: BX with row address in stateTable. If invalid, BX points to failsafe row
+    FindStateRoutine proc
+        Push cx
+        Push dx
+
+        Xor bx, bx           ; Base to address stateTable contents
+        Mov cx, TABLE_SIZE
+        Mov dx, programState ; Copy to reg for mem to mem comparison
+
+    ITER_FindStateRoutine:
+        Cmp dx, word ptr stateTable[bx]
+        Je END_FindStateRoutine     ; Routine address found, halt
+        Add bx, STATE_OFFSET         ; Otherwise, point to next row
+        Loop ITER_FindStateRoutine
+        ; If out of range, BX points to failsafe state address
+        Mov dx, word ptr stateTable[bx]
+        Mov programState, dx ; Update invalid program state with error state
+
+    END_FindStateRoutine:
+        Inc bx
+        Inc bx ; Adjust offset to point directly at state routine within table row
+        Pop dx
+        Pop cx
+        Ret
+    FindStateRoutine endP
+
     ; Calls the routine associated with the state of the program
     ; Inputs: Expects a valid state in programState variable
     ; Outputs: Executes a routine through its address
-    RunStateMachine proc
+    RunState proc
         Push cx
         Push dx
         Push si
 
         Xor si, si           ; Base to address stateTable contents
-        Mov cx, tableSize
-        Mov dl, programState ; Copy to reg for mem to mem comparison
+        Mov cx, TABLE_SIZE
+        Mov dx, programState ; Copy to reg for mem to mem comparison
 
-    ITER_RunStateMachine:
-        Cmp dl, stateTable[si]
+    ITER_RunState:
+        Cmp dx, stateTable[si]
         Je EXEC_State               ; Routine found
-        Add si, stateOffset         ; Otherwise, point to next row
-        Loop ITER_RunStateMachine
+        Add si, STATE_OFFSET         ; Otherwise, point to next row
+        Loop ITER_RunState
         ; If out of range, SI points to failsafe, and executes it
     EXEC_State:
-        Call word ptr stateTable[si+1] ; Offset SI by 1 to address the routine address, not the state code
+        Call word ptr stateTable[si+word] ; Offset SI by 2 to address the routine address, not the state code
 
         Pop si
         Pop dx
         Pop cx
         Ret
-    RunStateMachine endP
+    RunState endP
     
 
     main:
@@ -315,10 +367,17 @@ CodeSegment segment
         Mov ds, ax ; Set data's address
 
 
-        Mov programState, STATE_ERROR
-        Xor ax, ax
-        Mov al, programState
-        Call RunStateMachine
+        ;Mov programState, STATE_ERROR
+        Mov ax, STATE_EXAMPLE
+        call PrintAX
+        call PrintCRLF
+
+    ITER_main:
+        Cmp programState, STATE_HALT
+        Je exit
+        Call RunState
+        Jmp ITER_main
+
     exit:
         Mov al, 00h
         Mov ah, 4Ch
