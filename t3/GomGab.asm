@@ -349,7 +349,7 @@ CodeSegment segment
 
     ; Asks the user for a gargantuan number input, and validates it
     ; Inputs: [SI] - Address to input prompt, [DI] - Address to variable
-    ; Outputs: [DI] - Stores a valid input in gargantuan format
+    ; Outputs: [DI] - Stores a valid input in gargantuan format, CF - Set if an error ocurred
     GargantuanInput proc
         Push ax
         Push bx
@@ -363,22 +363,28 @@ CodeSegment segment
         Int 21h
 
         Cmp al, CHAR_CR
-        Je END_GargantuanInput ; Halt if user completed their input
+        Je FLAG_ValidInput ; Halt if user completed their input
 
         Xor al, 30h  ; Assume input in range 30h-39h, mask upper nibble to obtain range 00h-09h
         Cmp al, 10
         Jae FLAG_InvalidInput ; Flag if input is not valid decimal digit
 
-        Xor al, 30h ; Restore original value
+        Xor al, 30h             ; Restore original value
         Inc word ptr [di]       ; Update var's pascal counter
         Mov byte ptr di[bx], al ; Store input
         Inc bx                  ; Point at next available area
         Loop ITER_GargantuanInput
+        Jmp FLAG_ValidInput     ; Truncate input, skip error flagging logic
 
     FLAG_InvalidInput:
         Mov programState, ERROR_INV_IN
+        Call PrintCRLF ; Add newline to avoid printing next to last input
+        Stc
+        Jmp END_GargantuanInput
+
+    FLAG_ValidInput:
+        Clc
     END_GargantuanInput:
-        ;Call PrintCRLF
         Pop bx
         Pop ax
         Ret
@@ -410,11 +416,16 @@ CodeSegment segment
         Mov si, offset inputPrompt1
         Mov di, offset gargantuanA
         Call GargantuanInput
+        Jc END_ExampleRoutine ; Halt if an error ocurred
+
 
         Mov si, offset inputPrompt2
         Mov di, offset gargantuanB
         Call GargantuanInput
+        Jc END_ExampleRoutine
+
         Mov programState, STATE_HALT
+    END_ExampleRoutine:
         Pop ax
         Ret
     ExampleRoutine endP
