@@ -72,7 +72,7 @@ DataSegment segment
 ; String literals
     aboutMe db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. 16/Set/2025", CHAR_CR, CHAR_LF
             db "Tarea Numero Gargantua | Autor: Gabriel Gomez Vega, 2021106483", CHAR_NULL
-    helpMe  db "Ingrese junto al programa uno comando validos para numeros gargantua:", CHAR_CR, CHAR_LF
+    helpMe  db "Ingrese junto al programa un unico comando valido para numeros gargantua:", CHAR_CR, CHAR_LF
             db CHAR_HTAB, STATE_ADDITION,": Sumar dos valores gargantua", CHAR_CR, CHAR_LF
             db CHAR_HTAB, STATE_COMPLEMENT,": Complementar un valor", CHAR_CR, CHAR_LF
             db CHAR_HTAB, STATE_SUBTRACT,": Restar un valor gargantua a otro", CHAR_CR, CHAR_LF
@@ -304,11 +304,12 @@ CodeSegment segment
     ReadCL endP
 
     ; Reads the command line's input and stores parameters if present
-    ; Inputs: Expects ...
+    ; Inputs: Expects a single char input that serves as a command
     ; Outputs: Stores values in data variables, and flags errors if necessary
     ReadInput proc
         Push ax
         Push bx
+        Push cx
 
         Mov bx, PSP_INPUT_OFFSET
         Cmp byte ptr es:[bx], 0    ; Is there an input?
@@ -318,12 +319,29 @@ CodeSegment segment
         Inc bx ; Point to input-preceding whitespace
         Inc bx ; Point to first char
         
-        ; Insert detailed logic here
+        Xor ah, ah
+        Mov al, byte ptr es:[bx] ; Retrieve input, ignores any additional input if there's any
+        And al, 0DFh              ; Assume valid char, but try enforcing upper case to allow either as valid
 
-        Jmp END_ReadInput  ; Skip error flagging line
+        Mov bx, STATE_OFFSET   ; Set offset within stateTable to address each entry, currently points to 2nd entry
+        Shl bx, 1              ; Double offset to start at first command entry (ignore default and help states)
+        Mov cx, (TABLE_SIZE-2) ; Set counter with offset in mind
+
+    ITER_ReadInput:
+        Cmp ax, stateTable[bx] ; Compare if input is a registered state value
+        Je BREAK_ReadInput     ; If found, set next state
+        Add bx, STATE_OFFSET   ; Point to next entry
+        Loop ITER_ReadInput
+
+        Mov ax, stateTable[bx]  ; If no state was found, bx is pointing to fail safe state
+    BREAK_ReadInput:
+        Mov programState, ax
+        Jmp END_ReadInput
+
     FLAG_NoInput:
         Mov programState, STATE_HELP
     END_ReadInput:
+        Pop cx
         Pop bx
         Pop ax
         Ret
@@ -335,7 +353,6 @@ CodeSegment segment
     StartProgram proc
         Call PrintAboutMe
         Call ReadInput
-        Mov programState, STATE_HALT ; Temporary placement to avoid endless loop if no input
         Ret
     StartProgram endP
 
@@ -343,9 +360,12 @@ CodeSegment segment
     ; Inputs: ...
     ; Outputs: Sets programState to halt if no error occured
     ExampleRoutine proc
+        Push ax
+        Mov ax, programState
         Call PrintAX
         Call PrintCRLF
         Mov programState, STATE_HALT
+        Pop ax
         Ret
     ExampleRoutine endP
 
@@ -415,7 +435,7 @@ CodeSegment segment
         Mov ax, DataSegment
         Mov ds, ax ; Set data's address
 
-        
+        Xor ax, ax
     ITER_main:
         Cmp programState, STATE_HALT
         Je exit
