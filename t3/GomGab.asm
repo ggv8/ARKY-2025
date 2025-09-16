@@ -679,6 +679,30 @@ CodeSegment segment
         Ret
     GargantuanAddition endP
 
+    ; Subtracts gargantuan operands and returns the result in the destination operand
+    ; Inputs: [DI] - destination operand, [SI] - Source operand
+    ; Outputs: [DI] - Compressed result of the sum, CF - Clear carry if result is negative
+    GargantuanSubtraction proc
+        Push ax
+        Push si
+        Push di
+
+        Call NormalizeOperands      ; Set operand sizes to match the greatest, important before complementing
+        Xchg di, si                 ; Set DI parameter with subtrahend
+        Call GargantuanComplement   ; Obtain its complement
+        Xchg di, si                 ; Restore operands for subtraction
+        Call GargantuanAddition     ; Obtain result with complement's arithmetic, sets flag if result is positive
+
+        Pushf                       ; Backup of sign result
+        Call TruncateOperand        ; Try to compress result by removing any remaining zeros in leftmost position
+        Popf                        ; Restore after operation that modifies it
+
+        Pop di
+        Pop si
+        Pop ax
+        Ret
+    GargantuanSubtraction endP
+
     ; Duplicates one gargantuan operand
     ; Inputs: [DI] - destination operand
     ; Outputs: [DI] - Result of the operation, CF - Set if carry is pending past their digit count
@@ -872,14 +896,9 @@ CodeSegment segment
 
 
         Mov si, offset gargantuanA
-        Call NormalizeOperands      ; Set operand sizes to match the greatest, important before complementing
-        Call GargantuanComplement   ; Obtain complement for subtrahend
-
-        Xchg di, si                 ; Set first op address in [DI], and second op's in [SI]
-        Call GargantuanAddition     ; Obtain subtraction with complement's arithmetic
+        Xchg di, si                 ; Set parameters to obtain numberA - numberB
+        Call GargantuanSubtraction
         Jnc FLAG_SubUF              ; If no carry is pending, result is negative. Halt and flag error
-
-        Call TruncateOperand    ; Otherwise, try removing any remaining zeros in leftmost position
 
         Mov si, di          ; Set result in SI parameter to print it
         Call ResultWrapper  ; Show result and halt
