@@ -108,7 +108,7 @@ DataSegment segment
     STATE_OFFSET = ($ - stateTable)
                 dw STATE_HELP,      PrintHelp
                 dw STATE_ADDITION,  AdditionWrapper
-                dw STATE_COMPLEMENT,ExampleRoutine
+                dw STATE_COMPLEMENT,ComplementWrapper
                 dw STATE_SUBTRACT,  ExampleRoutine
                 dw STATE_DUPLICATE, ExampleRoutine
                 dw STATE_HALF,      ExampleRoutine
@@ -488,13 +488,53 @@ CodeSegment segment
         Ret
     NormalizeOperands endP
 
-    ; Adds two gargantuan operands and return the result in the destination operand
+    ; Obtains the complement of a single gargantuan operand
+    ; Inputs: [DI] - destination operand
+    ; Outputs: [DI] - Result, CF - Set if carry/borrow is pending past the digit count
+    GargantuanComplement proc
+        Push ax
+        Push bx
+        Push di
+
+        Mov bx, word ptr [di] ; Get operand size, indexes next-to-last digit
+        Clc                   ; Assume no borrow for first sub operation
+        Pushf                 ; Save borrow data
+    ITER_GargantuanComplement:
+        Cmp bx, 0
+        Je END_GargantuanComplement    ; Halt if all digits were processed
+
+        Xor ah, ah
+        Mov al, 40h ; Analog to 10 for the digit range 30h to 40h
+
+        Sub al, byte ptr di[byte+bx] ; Subtract to obtain single-digit complement
+        
+        Popf        ; Recover previous borrow
+        Sbb al, 6   ; Subtract 6+carry to complement to account for prev borrows AND for hex and dec base arithmetic
+        ; Example: 40h - 39h = 7, but we need the nibble to be a decimal value of 1
+
+        ; Possible range is 0-10. If 10 remains, no borrow is needed
+        Cmp al, 10  ; If destination op < source op, set CF: AL is 0-9. Else, clear CF: AL is 10
+        Pushf       ; Save CMP's implicit borrow flagging
+
+        Or al, 30h                      ; Restore char from int data
+        Mov byte ptr di[byte+bx], al    ; Store new digit in destination
+        Dec bx                          ; Point to next greatest digit
+        Jmp ITER_GargantuanComplement
+
+    END_GargantuanComplement:
+        Popf    ; Restore last borrow
+        Pop di
+        Pop bx
+        Pop ax
+        Ret
+    GargantuanComplement endP
+
+    ; Adds two gargantuan operands and returns the result in the destination operand
     ; Inputs: [DI] - destination operand, [SI] - Source operand
     ; Outputs: [DI] - Result of the sum, CF - Set if carry is pending past their digit count
     GargantuanAddition proc
         Push ax
         Push bx
-        Push cx
         Push si
         Push di
 
@@ -526,7 +566,6 @@ CodeSegment segment
         Popf    ; Restore last carry
         Pop di
         Pop si
-        Pop cx
         Pop bx
         Pop ax
         Ret
@@ -588,6 +627,33 @@ CodeSegment segment
         Pop si
         Ret
     AdditionWrapper endP
+
+    ; Requests a single operand for a complement, and provides its result
+    ; Inputs: Expects valid decimal numbers
+    ; Output: Sends the result's representation to the std output
+    ComplementWrapper proc
+        Push si
+        Push di
+
+        Mov si, offset inputPrompt1
+        Mov di, offset gargantuanA
+        Call GargantuanInput
+        Jc END_ComplementWrapper    ; Halt if error found
+
+        Call GargantuanComplement   ; Obtain input's complement
+
+        Mov si, offset outputPrompt
+        Call PrintLikeC
+        Xchg si, di ; Return destination op to si before printing
+        Call PrintLikeG
+        Call PrintCRLF
+
+        Mov programState, STATE_HALT
+    END_ComplementWrapper:
+        Pop di
+        Pop si
+        Ret
+    ComplementWrapper endP
 
     ; Routine for example state
     ; Inputs: ...
