@@ -64,12 +64,18 @@ DataSegment segment
         ERROR_INV_IN  = 8002h
         ERROR_SUM_OF  = 8003h
         ERROR_SUB_UF  = 8004h
+        ERROR_DUP_OF  = 8005h
     ;
 
     ; Misc
         PSP_INPUT_OFFSET = 80h
         STATIC_LIMIT     = 10 ; Individual gargantuan size limit due to single data-segment use
         ; TODO: Change static limit back to 20k. Changed temp for speed up linking
+        ; TODO: Refactorizar wrappers de operadores relacionales y auxiliares. Separarlos en una funcion que realiza el checkeo con dos numeros independiente de pedir input, lo mismo
+        ; aplica para Odd?
+        ; TODO: Duplicar recorre del LSD al MSD. SHL el valor y su carry queda pendiente para la siguiente iter
+        ; TODO: Half recorre del MSD al LSD. El cociente queda en la iter, el residuo pasa como carry a la siguiente iter
+        ; nota, dividir impares entre 2 siempre da residuo 5. El cociente siempre queda en un rango de 1 a 4 a lo sumo
     ;
 ;
 
@@ -105,6 +111,7 @@ DataSegment segment
     errorInvIn    db "La entrada solo acepta digitos en base decimal", CHAR_NULL
     errorSumOF    db "El resultado excede la memoria estatica permitida en el segmento", CHAR_NULL
     errorSubUF    db "La resta solicitada produce un numero negativo", CHAR_NULL
+    errorDupOF    db "El valor excede la memoria estatica reservada para la variable", CHAR_NULL
 ;
 
 ; Look-up Tables
@@ -114,7 +121,7 @@ DataSegment segment
                 dw STATE_ADDITION,  AdditionWrapper
                 dw STATE_COMPLEMENT,ComplementWrapper
                 dw STATE_SUBTRACT,  SubtractionWrapper
-                dw STATE_DUPLICATE, ExampleRoutine
+                dw STATE_DUPLICATE, DuplicationWrapper
                 dw STATE_HALF,      ExampleRoutine
                 dw STATE_ABOVE,     GreaterThanWrapper
                 dw STATE_BELOW,     LessThanWrapper
@@ -129,6 +136,7 @@ DataSegment segment
                 dw ERROR_INV_CMD,   PrintError ; Fail safe state
 
     errorVector dw offset errorNoState, offset errorInvCmd, offset errorInvIn, offset errorSumOF, offset errorSubUF
+                dw offset errorDupOF
 ;
 
     base dw 10
@@ -654,6 +662,45 @@ CodeSegment segment
         Ret
     GargantuanAddition endP
 
+    ; Duplicates one gargantuan operand
+    ; Inputs: [DI] - destination operand
+    ; Outputs: [DI] - Result of the operation, CF - Set if carry is pending past their digit count
+    GargantuanDuplication proc
+        Push ax
+        Push bx
+        Push di        
+
+        Mov bx, word ptr [di] ; Get operand size, indexes next-to-last digit
+        Clc                   ; Assume no carry for first suboperation
+        Pushf                 ; Save carry data
+    ITER_GargantuanDuplication:
+        Cmp bx, 0
+        Je END_GargantuanDuplication ; Halt if all digits were processed
+
+        Xor ax, ax
+        Mov al, byte ptr di[byte+bx] ; Copy rightmost digit
+        Xor al, 30h                  ; Obtain int from char data
+        Shl al, 1                    ; Duplicate value
+        AAM                          ; Set carry value in AH, digit value in AL
+
+        Popf        ; Recover previous carry
+        Adc al, 0   ; Add to result
+
+        Or al, 30h                      ; Restore char from int data
+        Mov byte ptr di[byte+bx], al    ; Store new digit in destination sub operand
+
+        Shr ah, 1 ; Set carry flag with value in ah
+        Pushf     ; Save for next iter
+        Dec bx    ; Point to next greatest digit
+        Jmp ITER_GargantuanDuplication
+
+    END_GargantuanDuplication:
+        Popf    ; Restore last carry
+        Pop di
+        Pop bx
+        Pop ax
+        Ret
+    GargantuanDuplication endP
 
     ; Prints AboutMe and validates user inputs
     ; Inputs: Expects a valid command line input
@@ -663,6 +710,21 @@ CodeSegment segment
         Call ReadInput
         Ret
     StartWrapper endP
+
+    ; Prints a result prompt for a gargantuan value
+    ; Inputs: [SI] - Address of number to print
+    ; Output: Sends result to standard output, [programState] - sets state to halt
+    ResultWrapper proc
+        Push si
+        Mov si, offset outputPrompt
+        Call PrintLikeC ; Print prompt before showing result
+        Pop si          ; Restore address of result value
+
+        Call PrintLikeG ; Print number representation
+        Call PrintCRLF
+        Mov programState, STATE_HALT ; Halt entire program
+        Ret
+    ResultWrapper endP
 
     ; Requests operands for a sum, and provides their result
     ; Inputs: Expects valid decimal numbers
@@ -698,13 +760,8 @@ CodeSegment segment
         Jmp END_AdditionWrapper
 
     AUX_AdditionWrapper:
-        Mov si, offset outputPrompt
-        Call PrintLikeC
-        Xchg si, di ; Return destination op to si before printing
-        Call PrintLikeG
-        Call PrintCRLF
-
-        Mov programState, STATE_HALT ; Halt entire program
+        Mov si, di          ; Set result in SI parameter to print it
+        Call ResultWrapper  ; Show result and halt
     END_AdditionWrapper:
         Pop di
         Pop si
@@ -726,13 +783,8 @@ CodeSegment segment
         Call GargantuanComplement   ; Obtain input's complement
         Call TruncateOperand
 
-        Mov si, offset outputPrompt
-        Call PrintLikeC
-        Xchg si, di ; Return destination op to si before printing
-        Call PrintLikeG
-        Call PrintCRLF
-
-        Mov programState, STATE_HALT ; Halt entire program
+        Mov si, di          ; Set result in SI parameter to print it
+        Call ResultWrapper  ; Show result and halt
     END_ComplementWrapper:
         Pop di
         Pop si
@@ -772,12 +824,8 @@ CodeSegment segment
 
         Call TruncateOperand    ; Otherwise, try removing any remaining zeros in leftmost position
 
-        Mov si, offset outputPrompt ; Proceed to result printing
-        Call PrintLikeC
-        Xchg si, di     ; Set result to si before printing
-        Call PrintLikeG
-        Call PrintCRLF
-        Mov programState, STATE_HALT ; Halt entire program
+        Mov si, di          ; Set result in SI parameter to print it
+        Call ResultWrapper  ; Show result and halt
         Jmp END_SubtractionWrapper
 
     FLAG_SubUF:
@@ -789,6 +837,40 @@ CodeSegment segment
         Pop ax
         Ret
     SubtractionWrapper endP
+
+    ; Requests an operand to duplicate, and provides its result
+    ; Inputs: Expects valid decimal numbers
+    ; Output: Sends the result's representation to the std output
+    DuplicationWrapper proc
+        Push si
+        Push di
+
+        Mov si, offset inputPromptU
+        Mov di, offset gargantuanA
+        Call GargantuanInput
+        Jc END_DuplicationWrapper    ; Halt if error found
+
+        Call GargantuanDuplication   ; Obtain input's duplicate value
+        Jnc AUX_DuplicationWrapper   ; If no carry is pending, show result
+
+        Call ShiftGargantuanR        ; Otherwise, try to allocate space fordigit
+        Jc FLAG_DupOF                ; Catch shift exceeding static limit of variable
+
+        Mov byte ptr di[word], '1' ; Store carry in new digit position 
+        Jmp AUX_AdditionWrapper    ; Continue to result display
+
+    FLAG_DupOF:
+        Mov programState, ERROR_DUP_OF
+        Jmp END_DuplicationWrapper
+
+    AUX_DuplicationWrapper:
+        Mov si, di          ; Set result in SI parameter to print it
+        Call ResultWrapper  ; Show result and halt
+    END_DuplicationWrapper:
+        Pop di
+        Pop si
+        Ret
+    DuplicationWrapper endP
 
     ; Requests operands for a comparison, and obtains their subtraction
     ; Inputs: Expects valid decimal numbers
@@ -896,20 +978,6 @@ CodeSegment segment
     ExampleRoutine proc
         Push ax
         Mov ax, programState
-        Call PrintAX
-        Call PrintCRLF
-
-        Mov si, offset inputPrompt1
-        Mov di, offset gargantuanA
-        Call GargantuanInput
-        Jc END_ExampleRoutine ; Halt if an error ocurred
-
-
-        Mov si, offset inputPrompt2
-        Mov di, offset gargantuanB
-        Call GargantuanInput
-        Jc END_ExampleRoutine
-
 
         Mov programState, STATE_HALT
     END_ExampleRoutine:
@@ -983,7 +1051,6 @@ CodeSegment segment
         Mov ax, DataSegment
         Mov ds, ax ; Set data's address
 
-        Xor ax, ax
     ITER_main:
         Cmp programState, STATE_HALT
         Je exit
