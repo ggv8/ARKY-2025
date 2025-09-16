@@ -122,7 +122,7 @@ DataSegment segment
                 dw STATE_COMPLEMENT,ComplementWrapper
                 dw STATE_SUBTRACT,  SubtractionWrapper
                 dw STATE_DUPLICATE, DuplicationWrapper
-                dw STATE_HALF,      ExampleRoutine
+                dw STATE_HALF,      HalvingWrapper
                 dw STATE_ABOVE,     GreaterThanWrapper
                 dw STATE_BELOW,     LessThanWrapper
                 dw STATE_EQUAL,     IsEqualWrapper
@@ -702,6 +702,46 @@ CodeSegment segment
         Ret
     GargantuanDuplication endP
 
+    ; Halves one gargantuan operand
+    ; Inputs: [DI] - destination operand
+    ; Outputs: [DI] - Result of the operation, CF - Set if number has remainder
+    GargantuanHalving proc
+        Push ax
+        Push bx
+        Push cx
+        Push di        
+
+        Xor bx, bx            ; To index each digit from leftmost to rightmost
+        Mov cx, word ptr [di] ; Get operand size for iter control
+        Clc                   ; Assume no carry for first suboperation
+        Pushf                 ; Save carry data
+    ITER_GargantuanHalving:
+        Xor ah, ah
+        Popf                      ; Recover previous carry
+        Jnc AUX_GargantuanHalving ; If no remainder, don't adjust for borrow
+        Add ah, 5                 ; Otherwise, store half of borrow (10 / 2 = 5)
+
+    AUX_GargantuanHalving:
+        Mov al, byte ptr di[word+bx] ; Copy rightmost digit
+        Xor al, 30h                  ; Obtain int from char data
+        Shr al, 1                    ; Halve value, carry is set if there's a remainder
+        Pushf                        ; Save borrow/remainder for next iter
+
+        Add al, ah                      ; Apply pending borrow half if any
+        Or al, 30h                      ; Restore char from int data
+        Mov byte ptr di[word+bx], al    ; Store new digit in destination sub operand
+        Inc bx                          ; Point to next least significant digit
+        Loop ITER_GargantuanHalving
+
+    END_GargantuanHalving:
+        Popf    ; Restore last carry
+        Pop di
+        Pop cx
+        Pop bx
+        Pop ax
+        Ret
+    GargantuanHalving endP
+
     ; Prints AboutMe and validates user inputs
     ; Inputs: Expects a valid command line input
     ; Output: Sends AboutMe to standard output
@@ -871,6 +911,29 @@ CodeSegment segment
         Pop si
         Ret
     DuplicationWrapper endP
+
+    ; Requests an operand to halve, and provides its result
+    ; Inputs: Expects valid decimal numbers
+    ; Output: Sends the result's representation to the std output
+    HalvingWrapper proc
+        Push si
+        Push di
+
+        Mov si, offset inputPromptU
+        Mov di, offset gargantuanA
+        Call GargantuanInput
+        Jc END_DuplicationWrapper    ; Halt if error found
+
+        Call GargantuanHalving       ; Obtain input's halved value
+        Call TruncateOperand         ; Truncate any remaining zeros in leftmost position
+
+        Mov si, di          ; Set result in SI parameter to print it
+        Call ResultWrapper  ; Show result and halt
+    END_HalvingWrapper:
+        Pop di
+        Pop si
+        Ret
+    HalvingWrapper endP
 
     ; Requests operands for a comparison, and obtains their subtraction
     ; Inputs: Expects valid decimal numbers
