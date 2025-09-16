@@ -63,6 +63,7 @@ DataSegment segment
         ERROR_INV_CMD = 8001h
         ERROR_INV_IN  = 8002h
         ERROR_SUM_OF  = 8003h
+        ERROR_SUB_UF  = 8004h
     ;
 
     ; Misc
@@ -101,6 +102,7 @@ DataSegment segment
     errorInvCmd   db "Se ha ingresado un comando invalido.", CHAR_NULL
     errorInvIn    db "La entrada solo acepta digitos en base decimal", CHAR_NULL
     errorSumOF    db "El resultado excede la memoria estatica permitida en el segmento", CHAR_NULL
+    errorSubUF    db "La resta solicitada produce un numero negativo", CHAR_NULL
 ;
 
 ; Look-up Tables
@@ -109,7 +111,7 @@ DataSegment segment
                 dw STATE_HELP,      PrintHelp
                 dw STATE_ADDITION,  AdditionWrapper
                 dw STATE_COMPLEMENT,ComplementWrapper
-                dw STATE_SUBTRACT,  ExampleRoutine
+                dw STATE_SUBTRACT,  SubtractionWrapper
                 dw STATE_DUPLICATE, ExampleRoutine
                 dw STATE_HALF,      ExampleRoutine
                 dw STATE_ABOVE,     ExampleRoutine
@@ -124,7 +126,7 @@ DataSegment segment
     TABLE_SIZE = ($ - stateTable) / STATE_OFFSET
                 dw ERROR_INV_CMD,   PrintError ; Fail safe state
 
-    errorVector dw offset errorNoState, offset errorInvCmd, offset errorInvIn, offset errorSumOF
+    errorVector dw offset errorNoState, offset errorInvCmd, offset errorInvIn, offset errorSumOF, offset errorSubUF
 ;
 
     base dw 10
@@ -454,6 +456,62 @@ CodeSegment segment
         Ret
     ShiftGargantuanR endP
 
+    ; Shift once all digits of a Gargantuan number to remove the leftmost digit
+    ; Inputs: [DI] - Address of gargantuan variable
+    ; Outputs: [DI] - Updates gargantuan var's size value and digit positions, CF - set if shift exceeds limit
+    ShiftGargantuanL proc
+        Push es
+        Push cx
+        Push si
+        Push di
+
+        Mov cx, word ptr [di] ; Retrieve digit count
+        Cmp cx, 1
+        Je FLAG_ShiftBound    ; Flag if number can't be shifted due to already being a single digit
+
+        Dec cx                  ; Update count
+        Mov word ptr [di], cx   ; and store it
+
+        Push ds
+        Pop es  ; Set DI to work in the same segment as SI
+        Cld     ; Inc addresses for upcoming rep
+
+        Inc di
+        Inc di      ; Set DI at leftmost digit
+        Mov si, di  
+        Inc si      ; Set SI at its next digit
+
+        Rep Movsb ; Shifts each digit once. When done, DI points to first digit out of bounds
+
+        Clc ; Flag valid shift
+        Jmp END_ShiftGargantuanL
+
+    FLAG_ShiftBound:
+        Stc
+    END_ShiftGargantuanL:
+        Pop di
+        Pop si
+        Pop cx
+        Pop es
+        Ret
+    ShiftGargantuanL endP
+
+    ; Shifts a gargantuan operand to remove any leftmost zeros in numbers different than only 0
+    ; Inputs: [DI] - Destination operand
+    TruncateOperand proc
+        Cmp word ptr [di], 1
+        Je END_TruncateOperand ; If operand is a single digit long, there is no need to shift compress it
+
+    ITER_TruncateOperand:
+        Cmp byte ptr [di+word], '0' ; Check current leftmost digit
+        Jne END_TruncateOperand     ; If no leftmost zero remains, halt
+        Call ShiftGargantuanL       ; Otherwise, remove it and compress remaining digits
+        Jmp ITER_TruncateOperand
+    
+    END_TruncateOperand:
+        Ret
+    TruncateOperand endP
+
     ; Shifts a gargantuan operand to match the size of a larger one
     ; Inputs: [DI] - Destination operand, [SI] - Source operand
     NormalizeOperands proc
@@ -510,11 +568,16 @@ CodeSegment segment
         
         Popf        ; Recover previous borrow
         Sbb al, 6   ; Subtract 6+carry to complement to account for prev borrows AND for hex and dec base arithmetic
-        ; Example: 40h - 39h = 7, but we need the nibble to be a decimal value of 1
+        ; Example: 40h - 39h = 7h, but we need the nibble to be a decimal value of 1
 
         ; Possible range is 0-10. If 10 remains, no borrow is needed
         Cmp al, 10  ; If destination op < source op, set CF: AL is 0-9. Else, clear CF: AL is 10
         Pushf       ; Save CMP's implicit borrow flagging
+
+        Jne CONTINUE_GargantuanComplement; If different than 10, no adjustment is necessary
+        Xor al, al  ; Otherwise, clear to obtain '0's proper complement, itself :)...
+
+    CONTINUE_GargantuanComplement:
 
         Or al, 30h                      ; Restore char from int data
         Mov byte ptr di[byte+bx], al    ; Store new digit in destination
@@ -536,9 +599,7 @@ CodeSegment segment
         Push ax
         Push bx
         Push si
-        Push di
-
-        Call NormalizeOperands ; Set operand sizes to match each others
+        Push di        
 
         Mov bx, word ptr [di] ; Get operand size, indexes next-to-last digit
         Clc                   ; Assume no carry for first suboperation
@@ -600,6 +661,7 @@ CodeSegment segment
 
         Mov si, offset gargantuanA
         Xchg di, si ; Set first op address in [DI], and second op's in [SI]
+        Call NormalizeOperands ; Set operand sizes to match each others
         Call GargantuanAddition
         Jnc AUX_AdditionWrapper ; If no carry is pending, show result
 
@@ -613,7 +675,6 @@ CodeSegment segment
         Mov programState, ERROR_SUM_OF
         Jmp END_AdditionWrapper
 
-        ; Logic that checks for carry
     AUX_AdditionWrapper:
         Mov si, offset outputPrompt
         Call PrintLikeC
@@ -635,12 +696,13 @@ CodeSegment segment
         Push si
         Push di
 
-        Mov si, offset inputPrompt1
+        Mov si, offset inputPromptU
         Mov di, offset gargantuanA
         Call GargantuanInput
         Jc END_ComplementWrapper    ; Halt if error found
 
         Call GargantuanComplement   ; Obtain input's complement
+        Call TruncateOperand
 
         Mov si, offset outputPrompt
         Call PrintLikeC
@@ -654,6 +716,57 @@ CodeSegment segment
         Pop si
         Ret
     ComplementWrapper endP
+
+    ; Requests operands for a sum, and provides their result
+    ; Inputs: Expects valid decimal numbers
+    ; Output: Sends the result's representation to the std output
+    SubtractionWrapper proc
+        Push ax
+        Push si
+        Push di
+
+        Mov si, offset inputPrompt1
+        Mov di, offset gargantuanA
+        Call GargantuanInput
+        Jc END_SubtractionWrapper      ; Halt if error found
+
+        Mov si, offset inputPrompt2
+        Mov di, offset gargantuanB
+        Call GargantuanInput
+        Jc END_SubtractionWrapper      ; Halt if error found
+
+        Mov ax, gargantuanA
+        Cmp ax, gargantuanB
+        Jb FLAG_SubUF   ; If destination digit size < source's, result will be negative. Halt and flag error
+
+
+        Mov si, offset gargantuanA
+        Call NormalizeOperands      ; Set operand sizes to match the greatest, important before complementing
+        Call GargantuanComplement   ; Obtain complement for subtrahend
+
+        Xchg di, si                 ; Set first op address in [DI], and second op's in [SI]
+        Call GargantuanAddition     ; Obtain subtraction with complement's arithmetic
+        Jnc FLAG_SubUF              ; If no carry is pending, result is negative. Halt and flag error
+
+        Call TruncateOperand    ; Otherwise, try removing any remaining zeros in leftmost position
+
+        Mov si, offset outputPrompt ; Proceed to result printing
+        Call PrintLikeC
+        Xchg si, di     ; Set result to si before printing
+        Call PrintLikeG
+        Call PrintCRLF
+        Mov programState, STATE_HALT
+        Jmp END_SubtractionWrapper
+
+    FLAG_SubUF:
+        Mov programState, ERROR_SUB_UF
+
+    END_SubtractionWrapper:
+        Pop di
+        Pop si
+        Pop ax
+        Ret
+    SubtractionWrapper endP
 
     ; Routine for example state
     ; Inputs: ...
