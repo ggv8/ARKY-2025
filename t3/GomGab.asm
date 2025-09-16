@@ -126,7 +126,7 @@ DataSegment segment
                 dw STATE_ABOVE,     GreaterThanWrapper
                 dw STATE_BELOW,     LessThanWrapper
                 dw STATE_EQUAL,     IsEqualWrapper
-                dw STATE_PARITY,    ExampleRoutine
+                dw STATE_PARITY,    OddWrapper
                 dw STATE_MULTIPLY,  ExampleRoutine
                 dw STATE_DIVISION,  ExampleRoutine
                 dw STATE_POWER,     ExampleRoutine
@@ -622,6 +622,23 @@ CodeSegment segment
         Ret
     IsGargantuanZero endP
 
+    ; Determines if a gargantuan number is odd
+    ; Inputs: [DI] - Address of operand
+    ; Outputs: CF - Set if gargantuan is odd, cleared if even
+    IsGargantuanOdd proc
+        Push ax
+        Push bx
+
+        Mov bx, word ptr [di]        ; Obtain digit count
+        Mov al, byte ptr di[byte+bx] ; Retrieve least significant digit
+        Xor al, 30h                  ; Obtain int from char data
+        Shr al, 1                    ; Halve digit. CF is set if not even
+
+        Pop bx
+        Pop ax
+        Ret
+    IsGargantuanOdd endP
+
     ; Adds two gargantuan operands and returns the result in the destination operand
     ; Inputs: [DI] - destination operand, [SI] - Source operand
     ; Outputs: [DI] - Result of the sum, CF - Set if carry is pending past their digit count
@@ -934,6 +951,37 @@ CodeSegment segment
         Pop si
         Ret
     HalvingWrapper endP
+
+    ; Requests an operand to it's odd parity, and provides the result
+    ; Inputs: Expects valid decimal numbers
+    ; Output: Sends the odd parity check to the std output
+    OddWrapper proc
+        Push si
+        Push di
+
+        Mov si, offset inputPromptU
+        Mov di, offset gargantuanA
+        Call GargantuanInput
+        Jc END_OddWrapper      ; Halt if error found
+
+        Mov si, offset outputPrompt ; Print result prompt
+        Call PrintLikeC
+
+        Mov si, offset outputTrue   ; Assume number is odd
+        Call IsGargantuanOdd        ; Result in CF
+        Jc AUX_OddWrapper           ; If assumption is correct, skip to result printing
+        Mov si, offset outputFalse   ; Otherwise, change result string
+    
+    AUX_OddWrapper:
+        Call PrintLikeC
+        Call PrintCRLF
+        Mov programState, STATE_HALT
+
+    END_OddWrapper:
+        Pop di
+        Pop si
+        Ret
+    OddWrapper endP
 
     ; Requests operands for a comparison, and obtains their subtraction
     ; Inputs: Expects valid decimal numbers
