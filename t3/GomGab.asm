@@ -62,11 +62,13 @@ DataSegment segment
         STATE_ERROR   = 8000h ; Used as reference for comparisons
         ERROR_INV_CMD = 8001h
         ERROR_INV_IN  = 8002h
+        ERROR_SUM_OF  = 8003h
     ;
 
     ; Misc
         PSP_INPUT_OFFSET = 80h
-        STATIC_LIMIT     = 20000 ; Individual gargantuan size limit due to single data-segment use
+        STATIC_LIMIT     = 10 ; Individual gargantuan size limit due to single data-segment use
+        ; TODO: Change static limit back to 20k. Changed temp for speed up linking
     ;
 ;
 
@@ -92,18 +94,20 @@ DataSegment segment
     inputPrompt1 db "Digite el primer Gargantua: ", CHAR_NULL
     inputPrompt2 db "Digite el segundo Gargantua: ", CHAR_NULL
     inputPromptU db "Digite un Gargantua: ", CHAR_NULL
+    outputPrompt db "El resultado es: ", CHAR_NULL
 
     errorLabel db "Error: ", CHAR_NULL
     errorNoState  db "El programa ha generado un error inesperado.", CHAR_NULL
     errorInvCmd   db "Se ha ingresado un comando invalido.", CHAR_NULL
     errorInvIn    db "La entrada solo acepta digitos en base decimal", CHAR_NULL
+    errorSumOF    db "El resultado excede la memoria estatica permitida en el segmento", CHAR_NULL
 ;
 
 ; Look-up Tables
-    stateTable  dw STATE_DEFAULT,   StartProgram
+    stateTable  dw STATE_DEFAULT,   StartWrapper
     STATE_OFFSET = ($ - stateTable)
                 dw STATE_HELP,      PrintHelp
-                dw STATE_ADDITION,  ExampleRoutine
+                dw STATE_ADDITION,  AdditionWrapper
                 dw STATE_COMPLEMENT,ExampleRoutine
                 dw STATE_SUBTRACT,  ExampleRoutine
                 dw STATE_DUPLICATE, ExampleRoutine
@@ -120,7 +124,7 @@ DataSegment segment
     TABLE_SIZE = ($ - stateTable) / STATE_OFFSET
                 dw ERROR_INV_CMD,   PrintError ; Fail safe state
 
-    errorVector dw offset errorNoState, offset errorInvCmd, offset errorInvIn
+    errorVector dw offset errorNoState, offset errorInvCmd, offset errorInvIn, offset errorSumOF
 ;
 
     base dw 10
@@ -353,17 +357,34 @@ CodeSegment segment
     GargantuanInput proc
         Push ax
         Push bx
+        Push cx
 
-        Mov bx, word         ; Set pointer after pascal size counter
-        Mov cx, STATIC_LIMIT ; Enforce limit based on allocated size for variable
-        Call PrintLikeC      ; Print prompt to std output
+        Call PrintLikeC        ; Print prompt to std output
+        Mov ah, DOS_INPUT_CHAR ; Set DOS function
+        Mov bx, word           ; Set pointer after pascal size counter
+        Mov cx, STATIC_LIMIT   ; Enforce limit based on allocated size for variable
     ITER_GargantuanInput:
-        Xor al, al
-        Mov ah, DOS_INPUT_CHAR
+        Xor al, al  ; Clear previous input before invoking DOS function
         Int 21h
 
+        Cmp cx, STATIC_LIMIT
+        Jne CONTINUE_GargantuanInput ; If not first input, ignore special cases
+
         Cmp al, CHAR_CR
-        Je FLAG_ValidInput ; Halt if user completed their input
+        Je AUX_IsFirstInput ; If user did not provide any digits, create default value
+
+        Cmp al, '0'
+        Jne CONTINUE_GargantuanInput ; Halt early if first input is 0
+        Call PrintCRLF               ; Newline to avoid any future printing next to input
+
+    AUX_IsFirstInput:
+        Inc word ptr [di]           ; Default value: Size=1, Value='0'
+        Mov byte ptr di[word], '0'
+        Jmp FLAG_ValidInput
+
+    CONTINUE_GargantuanInput:
+        Cmp al, CHAR_CR
+        Je FLAG_ValidInput ; Halt when user inputs <enter>
 
         Xor al, 30h  ; Assume input in range 30h-39h, mask upper nibble to obtain range 00h-09h
         Cmp al, 10
@@ -374,6 +395,7 @@ CodeSegment segment
         Mov byte ptr di[bx], al ; Store input
         Inc bx                  ; Point at next available area
         Loop ITER_GargantuanInput
+        Call PrintCRLF ; Newline to avoid printing next to last input
         Jmp FLAG_ValidInput     ; Truncate input, skip error flagging logic
 
     FLAG_InvalidInput:
@@ -385,12 +407,128 @@ CodeSegment segment
     FLAG_ValidInput:
         Clc
     END_GargantuanInput:
+        Pop cx
         Pop bx
         Pop ax
         Ret
     GargantuanInput endP
 
+    ; Shift once all digits of a Gargantuan number to make space for a new digit
+    ; Inputs: [DI] - Address of gargantuan variable
+    ; Outputs: [DI] - Updates gargantuan var's size value and digit positions, CF - set if shift exceeds limit
+    ShiftGargantuanR proc
+        Push es
+        Push cx
+        Push si
+        Push di
+
+        Mov cx, word ptr [di] ; Retrieve digit count
+        Cmp cx, STATIC_LIMIT
+        Jae FLAG_ShiftLimit   ; Flag if number can't be shifted due to static limit
+
+        Push ds
+        Pop es  ; Set DI to work in the same segment as SI
+        Std     ; Dec addresses for upcoming rep
+
+        Inc di
+        Inc di      ; Set DI at first digit
+        Add di, cx  ; Set DI at next to last digt
+        Mov si, di  
+        Dec si      ; Set SI at last digit
+
+        Rep Movsb ; Shifts each digit once. When done, DI points to new byte
+        Mov byte ptr [di], '0'
+        Dec si
+        Inc byte ptr [si] ; Increase digit count
+
+        Clc ; Flag valid shift
+        Jmp END_ShiftGargantuanR
+
+    FLAG_ShiftLimit:
+        Stc
+    END_ShiftGargantuanR:
+        Pop di
+        Pop si
+        Pop cx
+        Pop es
+        Ret
+    ShiftGargantuanR endP
+
+    ; Shifts a gargantuan operand to match the size of a larger one
+    ; Inputs: [DI] - Destination operand, [SI] - Source operand
+    NormalizeOperands proc
+        Push bx
+        Push cx
+        Push dx
+
+
+        Mov cx, word ptr [si] ; Assume source is larger, set target to its size and
+        Mov bx, di            ; use bx as placeholder for smaller operand's address
+
+        Mov dx, word ptr [di] ; Check if destination op size is actually larger
+        Cmp dx, cx
+        Je END_NormalizeOperands ; Skip proc if sizes are equal
+        Jb AUX_NormalizeOperands ; If assumption was correct, proceed directly to algorithm
+        ; Otherwise, update target size and placeholder
+        Xchg cx, dx
+        Mov bx, si
+
+    AUX_NormalizeOperands:
+        Xchg di, bx ; Set placeholder as upcoming routine's DI argument
+        Sub cx, dx  ; Shift up to the remaining range between sizes
+    ITER_NormalizeOperands:
+        Call ShiftGargantuanR
+        Loop ITER_NormalizeOperands
+        Xchg di, bx ; Restore addresses
+
+    END_NormalizeOperands:
+        Pop dx
+        Pop cx
+        Pop bx
+        Ret
+    NormalizeOperands endP
+
+    ; Adds two gargantuan operands and return the result in the destination operand
+    ; Inputs: [DI] - destination operand, [SI] - Source operand
+    ; Outputs: [DI] - Result of the sum, CF - Set if carry is pending past their digit count
     GargantuanAddition proc
+        Push ax
+        Push bx
+        Push cx
+        Push si
+        Push di
+
+        Call NormalizeOperands ; Set operand sizes to match each others
+
+        Mov bx, word ptr [di] ; Get operand size, indexes next-to-last digit
+        Clc                   ; Assume no carry for first suboperation
+        Pushf                 ; Save carry data
+    ITER_GargantuanAddition:
+        Cmp bx, 0
+        Je END_GargantuanAddition    ; Halt if all digits were processed
+
+        Xor ax, ax
+        Popf        ; Recover previous carry
+        Adc al, 0   ; Add to result
+
+        Add al, byte ptr di[byte+bx] ; Add each sub operand (byte to access last digit
+        Add al, byte ptr si[byte+bx] ; instead of next-to-last digit when using word)
+        AAA                          ; ASCII adjust to obtain carry in ah, and new digit in al (Unpacked BCD)
+
+        Or al, 30h                      ; Restore char from int data
+        Mov byte ptr di[byte+bx], al    ; Store new digit in destination sub operand
+        Shr ah, 1 ; Set carry flag with value in ah
+        Pushf     ; Save for next iter
+        Dec bx    ; Point to next greatest digit
+        Jmp ITER_GargantuanAddition
+
+    END_GargantuanAddition:
+        Popf    ; Restore last carry
+        Pop di
+        Pop si
+        Pop cx
+        Pop bx
+        Pop ax
         Ret
     GargantuanAddition endP
 
@@ -398,11 +536,58 @@ CodeSegment segment
     ; Prints AboutMe and validates user inputs
     ; Inputs: Expects a valid command line input
     ; Output: Sends AboutMe to standard output
-    StartProgram proc
+    StartWrapper proc
         Call PrintAboutMe
         Call ReadInput
         Ret
-    StartProgram endP
+    StartWrapper endP
+
+    ; Requests operands for a sum, and provides their result
+    ; Inputs: Expects valid decimal numbers
+    ; Output: Sends the result's representation to the std output
+    AdditionWrapper proc
+        Push si
+        Push di
+
+        Mov si, offset inputPrompt1
+        Mov di, offset gargantuanA
+        Call GargantuanInput
+        Jc END_AdditionWrapper      ; Halt if error found
+
+        Mov si, offset inputPrompt2
+        Mov di, offset gargantuanB
+        Call GargantuanInput
+        Jc END_AdditionWrapper      ; Halt if error found
+
+        Mov si, offset gargantuanA
+        Xchg di, si ; Set first op address in [DI], and second op's in [SI]
+        Call GargantuanAddition
+        Jnc AUX_AdditionWrapper ; If no carry is pending, show result
+
+        Call ShiftGargantuanR ; Try allocating space for carry digit
+        Jc FLAG_SumOF         ; Catch shift exceeding static limit of variable
+
+        Mov byte ptr di[word], '1' ; Store carry in new digit position 
+        Jmp AUX_AdditionWrapper    ; Continue to result display
+
+    FLAG_SumOF:
+        Mov programState, ERROR_SUM_OF
+        Jmp END_AdditionWrapper
+
+        ; Logic that checks for carry
+    AUX_AdditionWrapper:
+        Mov si, offset outputPrompt
+        Call PrintLikeC
+        Xchg si, di ; Return destination op to si before printing
+        Call PrintLikeG
+        Call PrintCRLF
+
+        Mov programState, STATE_HALT
+    END_AdditionWrapper:
+        Pop di
+        Pop si
+        Ret
+    AdditionWrapper endP
 
     ; Routine for example state
     ; Inputs: ...
@@ -423,6 +608,7 @@ CodeSegment segment
         Mov di, offset gargantuanB
         Call GargantuanInput
         Jc END_ExampleRoutine
+
 
         Mov programState, STATE_HALT
     END_ExampleRoutine:
