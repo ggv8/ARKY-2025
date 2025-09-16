@@ -96,6 +96,8 @@ DataSegment segment
     inputPrompt2 db "Digite el segundo Gargantua: ", CHAR_NULL
     inputPromptU db "Digite un Gargantua: ", CHAR_NULL
     outputPrompt db "El resultado es: ", CHAR_NULL
+    outputTrue   db "Verdadero", CHAR_NULL
+    outputFalse  db "Falso", CHAR_NULL
 
     errorLabel db "Error: ", CHAR_NULL
     errorNoState  db "El programa ha generado un error inesperado.", CHAR_NULL
@@ -114,9 +116,9 @@ DataSegment segment
                 dw STATE_SUBTRACT,  SubtractionWrapper
                 dw STATE_DUPLICATE, ExampleRoutine
                 dw STATE_HALF,      ExampleRoutine
-                dw STATE_ABOVE,     ExampleRoutine
-                dw STATE_BELOW,     ExampleRoutine
-                dw STATE_EQUAL,     ExampleRoutine
+                dw STATE_ABOVE,     GreaterThanWrapper
+                dw STATE_BELOW,     LessThanWrapper
+                dw STATE_EQUAL,     IsEqualWrapper
                 dw STATE_PARITY,    ExampleRoutine
                 dw STATE_MULTIPLY,  ExampleRoutine
                 dw STATE_DIVISION,  ExampleRoutine
@@ -499,12 +501,13 @@ CodeSegment segment
     ; Shifts a gargantuan operand to remove any leftmost zeros in numbers different than only 0
     ; Inputs: [DI] - Destination operand
     TruncateOperand proc
-        Cmp word ptr [di], 1
-        Je END_TruncateOperand ; If operand is a single digit long, there is no need to shift compress it
-
     ITER_TruncateOperand:
+        Cmp word ptr [di], 1
+        Je END_TruncateOperand      ; If operand is a single digit long, it can't be compressed further
+
         Cmp byte ptr [di+word], '0' ; Check current leftmost digit
         Jne END_TruncateOperand     ; If no leftmost zero remains, halt
+
         Call ShiftGargantuanL       ; Otherwise, remove it and compress remaining digits
         Jmp ITER_TruncateOperand
     
@@ -591,6 +594,25 @@ CodeSegment segment
         Pop ax
         Ret
     GargantuanComplement endP
+
+    ; Determines if a gargantuan number is equal to 0
+    ; Inputs: [DI] - Compressed operand (no leftmost zeros for values above 0)
+    ; Outputs: CF - Set if gargantuan is zero, cleared if not zero
+    IsGargantuanZero proc
+        Cmp word ptr [di], 1
+        Ja FLAG_GargantuanNotZero
+
+        Cmp byte ptr di[word], '0'
+        Jne FLAG_GargantuanNotZero
+
+        Stc
+        Jmp END_GargantuanZero
+
+    FLAG_GargantuanNotZero:
+        Clc
+    END_GargantuanZero:
+        Ret
+    IsGargantuanZero endP
 
     ; Adds two gargantuan operands and returns the result in the destination operand
     ; Inputs: [DI] - destination operand, [SI] - Source operand
@@ -682,7 +704,7 @@ CodeSegment segment
         Call PrintLikeG
         Call PrintCRLF
 
-        Mov programState, STATE_HALT
+        Mov programState, STATE_HALT ; Halt entire program
     END_AdditionWrapper:
         Pop di
         Pop si
@@ -710,7 +732,7 @@ CodeSegment segment
         Call PrintLikeG
         Call PrintCRLF
 
-        Mov programState, STATE_HALT
+        Mov programState, STATE_HALT ; Halt entire program
     END_ComplementWrapper:
         Pop di
         Pop si
@@ -755,7 +777,7 @@ CodeSegment segment
         Xchg si, di     ; Set result to si before printing
         Call PrintLikeG
         Call PrintCRLF
-        Mov programState, STATE_HALT
+        Mov programState, STATE_HALT ; Halt entire program
         Jmp END_SubtractionWrapper
 
     FLAG_SubUF:
@@ -767,6 +789,106 @@ CodeSegment segment
         Pop ax
         Ret
     SubtractionWrapper endP
+
+    ; Requests operands for a comparison, and obtains their subtraction
+    ; Inputs: Expects valid decimal numbers
+    ; Output: Stores the result in destination op, CF - set if dest. op >= source op, else it clears CF
+    ComparisonWrapper proc
+        Push si
+        Push di
+
+        Mov si, offset inputPrompt1
+        Mov di, offset gargantuanA
+        Call GargantuanInput
+        Jc END_ComparisonWrapper      ; Halt if error found
+
+        Mov si, offset inputPrompt2
+        Mov di, offset gargantuanB
+        Call GargantuanInput
+        Jc END_ComparisonWrapper      ; Halt if error found
+
+        Mov si, offset gargantuanA
+        Call NormalizeOperands      ; Set operand sizes to be same, especially before complement
+        Call GargantuanComplement   ; Obtain complement for subtrahend
+
+        Xchg di, si                 ; Set minuend in [DI], and subtrahend comp in [SI]
+        Call GargantuanAddition     ; Subtract via complement's addition, may set CF
+        ; If pending carry, minuend is above or equal
+        ; If no carry, minued is below
+
+
+        Pushf ; Create backup to avoid losing result
+        Call TruncateOperand        ; Compress result if possible
+        Mov si, offset outputPrompt ; Print result prompt
+        Call PrintLikeC
+        Popf
+        
+    END_ComparisonWrapper:
+        Pop di
+        Pop si
+        Ret
+    ComparisonWrapper endP
+
+    ; Requests operands for a '>' comparison, and prints the result
+    ; Inputs: Expects valid decimal numbers
+    ; Output: Sends the boolean result to the std output
+    GreaterThanWrapper proc
+        Mov si, offset outputFalse  ; Assume false by default
+        Call ComparisonWrapper      ; Compare two inputs
+        Jnc END_GreaterThanWrapper  ; If below, skip to final print
+
+        Mov di, offset gargantuanA
+        Call IsGargantuanZero
+        Jc END_GreaterThanWrapper   ; If equal, skip
+
+        Mov si, offset outputTrue   ; Assumption false, change output string
+
+    END_GreaterThanWrapper:
+        Call PrintLikeC
+        Call PrintCRLF
+
+        Mov programState, STATE_HALT ; Halt entire program
+        Ret
+    GreaterThanWrapper endP
+
+    ; Requests operands for a '>' comparison, and prints the result
+    ; Inputs: Expects valid decimal numbers
+    ; Output: Sends the boolean result to the std output
+    LessThanWrapper proc
+        Mov si, offset outputFalse  ; Assume false by default
+        Call ComparisonWrapper      ; Compare two inputs
+        Jc END_LessThanWrapper      ; If above or equal, skip to final print
+
+        Mov si, offset outputTrue   ; Assumption false, change output string
+
+    END_LessThanWrapper:
+        Call PrintLikeC
+        Call PrintCRLF
+
+        Mov programState, STATE_HALT ; Halt entire program
+        Ret
+    LessThanWrapper endP
+
+    ; Requests operands for a '=' comparison, and prints the result
+    ; Inputs: Expects valid decimal numbers
+    ; Output: Sends the boolean result to the std output
+    IsEqualWrapper proc
+        Mov si, offset outputFalse  ; Assume false by default
+        Call ComparisonWrapper      ; Compare two inputs
+
+        Mov di, offset gargantuanA
+        Call IsGargantuanZero
+        Jnc END_IsEqualWrapper      ; Subtraction was not zero, skip to printing
+
+        Mov si, offset outputTrue
+    
+    END_IsEqualWrapper:
+        Call PrintLikeC
+        Call PrintCRLF
+
+        Mov programState, STATE_HALT ; Halt entire program
+        Ret
+    IsEqualWrapper endP
 
     ; Routine for example state
     ; Inputs: ...
