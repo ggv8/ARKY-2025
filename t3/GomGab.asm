@@ -7,7 +7,33 @@
     ; ╔═════════════════════════════════════════════════════════════════════════╗
     ; ║                            Manual de Usuario                            ║
     ; ╠═════════════════════════════════════════════════════════════════════════╣
+    ; ║ Este programa recibe la letra de un comando y ejecuta una operacion con ║
+    ; ║ numeros gargantua. Es capaz de manejar hasta 3 numeros de ellos a la    ║
+    ; ║ vez con un limite de tamano de 20000 digitos. Esto debido al manejo de  ║
+    ; ║ un solo segmento de datos. Por supuesto, cuenta con un indicador de ta- ║
+    ; ║ manno que posibilita hasta 64KB en teoria.                              ║
     ; ║                                                                         ║
+    ; ║ Anticipa un solo comando de entra, que consiste en una letra represen-  ║
+    ; ║ tativa de la operacion. Puede sumar gargantuas, complementarlos, res-   ║
+    ; ║ tarlos mediante complemento, compararlos, revisar paridad impar, dupli- ║
+    ; ║ car su valor, obtener su mitas y multiplicarlos. Una vez que tiene el   ║
+    ; ║ resultado, lo despliega a la salida estandar si no excede el limite es- ║
+    ; ║ tatico de 20K.                                                          ║
+    ; ║                                                                         ║
+    ; ║ Si no se ingresa un comando valido, el programa despliega la ayuda de   ║
+    ; ║ usuario. Siempre despliega un pequenno acerca de. Si se ingresa un co-  ║
+    ; ║ mando valido, el programa espera a que usuario ingrese los digitos deci ║
+    ; ║ males que desee. Si se ingresan la cantidad maxima de digitos el pro-   ║
+    ; ║ grama trunca la entrada hasta ese punto. Si el usuario ingresa un valor ║
+    ; ║ que no es un digito decimal, informa al usuario del error. Eso incluye  ║
+    ; ║ caracteres de control como la barra espaciadora o retroceso. Sin embar- ║
+    ; ║ go, se acepta la tecla <Enter> para truncar la entrada que se dio hasta ║
+    ; ║ ese punto.                                                              ║
+    ; ║                                                                         ║
+    ; ║ Si el valor numerico excede el limite de tamanno, se reporta como un    ║
+    ; ║ error. Tampoco se aceptan resultados que den numeros negativos. Si la   ║
+    ; ║ operacion es una comparacion, se retorna la representacion en prosa de  ║
+    ; ║ su valor booleano.                                                      ║
     ; ╚═════════════════════════════════════════════════════════════════════════╝
     ; ╔═════════════════════════════════════════════════════════════════════════╗
     ; ║                        Analisis de Resultados                           ║
@@ -16,10 +42,29 @@
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
     ; ║ Documentacion                                            ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Documentacion                                            ║      A       ║
+    ; ║ Despliegue del Acerca De                                 ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Documentacion                                            ║      A       ║
+    ; ║ Despliegue de la Ayuda                                   ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Lectura de la linea de comandos                          ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Lectura de la entrada estandar                           ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Restricciones de la entrada                              ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Implementacion de las operaciones aritmeticas            ║      B       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Despliegue del resultado                                 ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Despliegue de mensajes de error                          ║      A       ║
     ; ╚══════════════════════════════════════════════════════════╩══════════════╝
+    
+    ; Explicacion adicional
+    ; Se tienen implementadas todas las operaciones solicitadas excepto la division
+    ; Si se cuenta con la funcionalidad para ejecutar la rutina si estuviese completa
+    ; Es decir, por el momento solo se tiene una funcion placeholder en su lugar.
+    ; No se cuenta las operaciones para pts extra de Fibonacci, Factorial ni Potencia
+    ; Sin embargo, la operacion de multiplicacion mediante el algoritmo egipcio es funcional
 ;
 
 DataSegment segment
@@ -69,13 +114,7 @@ DataSegment segment
 
     ; Misc
         PSP_INPUT_OFFSET = 80h
-        STATIC_LIMIT     = 10 ; Individual gargantuan size limit due to single data-segment use
-        ; TODO: Change static limit back to 20k. Changed temp for speed up linking
-        ; TODO: Refactorizar wrappers de operadores relacionales y auxiliares. Separarlos en una funcion que realiza el checkeo con dos numeros independiente de pedir input, lo mismo
-        ; aplica para Odd?
-        ; TODO: Duplicar recorre del LSD al MSD. SHL el valor y su carry queda pendiente para la siguiente iter
-        ; TODO: Half recorre del MSD al LSD. El cociente queda en la iter, el residuo pasa como carry a la siguiente iter
-        ; nota, dividir impares entre 2 siempre da residuo 5. El cociente siempre queda en un rango de 1 a 4 a lo sumo
+        STATIC_LIMIT     = 20000 ; Individual gargantuan size limit due to single data-segment use
     ;
 ;
 
@@ -127,7 +166,8 @@ DataSegment segment
                 dw STATE_BELOW,     LessThanWrapper
                 dw STATE_EQUAL,     IsEqualWrapper
                 dw STATE_PARITY,    OddWrapper
-                dw STATE_MULTIPLY,  ExampleRoutine
+                dw STATE_MULTIPLY,  ProductWrapper
+
                 dw STATE_DIVISION,  ExampleRoutine
                 dw STATE_POWER,     ExampleRoutine
                 dw STATE_FIBONACCI, ExampleRoutine
@@ -390,8 +430,7 @@ CodeSegment segment
         Call PrintCRLF               ; Newline to avoid any future printing next to input
 
     AUX_IsFirstInput:
-        Inc word ptr [di]           ; Default value: Size=1, Value='0'
-        Mov byte ptr di[word], '0'
+        Call SetGargantuanZero
         Jmp FLAG_ValidInput
 
     CONTINUE_GargantuanInput:
@@ -523,6 +562,37 @@ CodeSegment segment
         Ret
     TruncateOperand endP
 
+    ; Copies a gargantuan number from one variable to another
+    ; Inputs: [SI] - Number to copy, [DI] - Target variable
+    ; Outputs: [DI] - Contains same data as [SI]
+    CopyOperand proc
+        Push es
+        Push cx
+        Push si
+        Push di
+
+        Mov cx, word ptr [si] ; Retrieve digit count
+        Mov word ptr [di], cx ; Copy counter to target
+
+        Push ds
+        Pop es  ; Set DI to work in the same segment as SI
+        Cld     ; Inc addresses for upcoming rep
+
+        Inc di
+        Inc di      ; Point to target's first digit
+        Inc si
+        Inc si      ; Point SI at its first digit
+
+        Rep Movsb ; Copies each digit
+
+    END_CopyOperand:
+        Pop di
+        Pop si
+        Pop cx
+        Pop es
+        Ret
+    CopyOperand endP
+
     ; Shifts a gargantuan operand to match the size of a larger one
     ; Inputs: [DI] - Destination operand, [SI] - Source operand
     NormalizeOperands proc
@@ -602,6 +672,15 @@ CodeSegment segment
         Pop ax
         Ret
     GargantuanComplement endP
+
+    ; Initializes a gargantuan value to zero
+    ; Inputs: [DI] - Variable address to init data type
+    ; Outpus: [DI] - Number zero in gargantuan format
+    SetGargantuanZero proc
+        Mov word ptr [di], 1
+        Mov byte ptr di[word], '0'
+        Ret
+    SetGargantuanZero endP
 
     ; Determines if a gargantuan number is equal to 0
     ; Inputs: [DI] - Compressed operand (no leftmost zeros for values above 0)
@@ -782,6 +861,124 @@ CodeSegment segment
         Pop ax
         Ret
     GargantuanHalving endP
+
+    ; Non-destructive comparison routine that emulates flags of a subtraction cmp
+    ; Inputs: [DI] - destination operand, [SI] - Source operand
+    ; Outputs: AH - Stores CF for sign, AL - for implied ZF
+    GargantuanCompare proc
+        Push es
+        Push cx
+        Push si
+        Push di
+
+        Xor ax, ax            ; Clear to store results
+        Mov cx, word ptr [di] ; Retrieve digit count
+        Cmp cx, word ptr [si]
+        Je AUX_GargantuanCompare ; If same size, check if equal
+        Jb FLAG_GargantuanBelow  ; If below, clear CF
+        Stc                      ; If above, set CF
+        Jmp FLAG_GargantuanNotEqual
+
+    FLAG_GargantuanBelow:
+        Clc
+    FLAG_GargantuanNotEqual:
+        Rcl ah, 1 ; Otherwise, store CF as sign bit, and AL = 00 to imply not-zero
+        Jmp END_GargantuanCompare
+
+    AUX_GargantuanCompare:
+        Push ds
+        Pop es  ; Set DI to work in the same segment as SI
+        Cld     ; Inc addresses for upcoming rep
+
+        Inc di
+        Inc di      ; Point to target's first digit
+        Inc si
+        Inc si      ; Point SI at its first digit
+
+        ;Xchg di, si ; String instruction compares [SI] ? [DI], but we need [DI] ? [SI]
+        Repe Cmpsb  ; Compare until values are different or Cx=0
+        Jne FLAG_GargantuanNotEqual ; If a different digit was found, flag as not equal
+
+        Mov ax, 0101h ; Otherwise, set AH to flag above/equal, and AL to flag as equal
+
+    END_GargantuanCompare:
+        Pop di
+        Pop si
+        Pop cx
+        Pop es
+        Ret
+    GargantuanCompare endP
+
+    ; Multiplies two gargantuan numbers using the Egyptian algorithm
+    ; Inputs: [DI] - result's storage address, [SI] - multiplicand, [Bx] - multiplier
+    ; Outputs: [Bx] - Result of the operation, CF - set if carry is pending past their digit count
+    GargantuanProduct proc
+        Push ax
+        Push bx
+        Push dx
+        Push si
+        Push di
+
+        Mov dx, di             ; Backup of result's address
+
+        ; Determine which operand is the greatest, upcoming algorithm assumes SI > BX
+        Mov di, bx             ; To test if multiplier >= multiplicand
+        Call GargantuanCompare ; Result in ax
+
+        Shr ah, 1                 ; Restore sign flag into CF
+        Jnc AUX_GargantuanProduct ; SI > BX, no change needed
+        Xchg si, bx               ; Otherwise, set greater value in SI
+
+    AUX_GargantuanProduct:
+        Mov di, dx
+        Call SetGargantuanZero ; Clear result workspace
+
+    ITER_GargantuanProduct: ; SI = max op, BX = min op
+        Mov di, bx
+        Call IsGargantuanOdd           ; Determine if max op should be accumulated in result
+        Jnc CONTINUE_GargantuanProduct ; Skip sum if even
+
+        Mov di, dx              ; Restore result's address for sum, max op is already set in SI
+        Call NormalizeOperands  ; Ensure both share digit size
+        Call GargantuanAddition
+        Jnc CONTINUE_GargantuanProduct ; If no pending carry, proceed to next iter
+
+        Call ShiftGargantuanR ; Otherwise, try to include new digit in result
+        Jc FLAG_MulOF         ; Catch overflow
+
+    CONTINUE_GargantuanProduct:
+        Mov di, bx                 ; Set min op as DI parameter to obtain half
+        Call GargantuanHalving
+        Call TruncateOperand       ; Truncate any remaining zeros in leftmost position
+        Call IsGargantuanZero
+        Jc FLAG_MulOK              ; Halt if (min op = 1) was already processed at start of iter
+
+        Mov di, si                 ; Set max op as DI parameter to obtain duplicate value
+        Call GargantuanDuplication
+        Jnc ITER_GargantuanProduct ; If no pending carry, proceed with iter
+
+        Call ShiftGargantuanR ; Otherwise, try to include new digit
+        Jc FLAG_MulOF         ; Catch overflow past static limit
+
+        Mov byte ptr di[word], '1' ; Otherwise, store carry in new digit position
+        Jmp ITER_GargantuanProduct
+
+    FLAG_MulOF: ; Same as DupOf
+        Mov programState, ERROR_DUP_OF
+        Stc
+        Jmp END_GargantuanProduct
+
+    FLAG_MulOK:
+        Clc
+
+    END_GargantuanProduct:
+        Pop di
+        Pop si
+        Pop dx
+        Pop bx
+        Pop ax
+        Ret
+    GargantuanProduct endP
 
     ; Prints AboutMe and validates user inputs
     ; Inputs: Expects a valid command line input
@@ -1002,58 +1199,83 @@ CodeSegment segment
         Ret
     OddWrapper endP
 
-    ; Requests operands for a comparison, and obtains their subtraction
+    ; Requests an operand to duplicate, and provides its result
     ; Inputs: Expects valid decimal numbers
-    ; Output: Stores the result in destination op, CF - set if dest. op >= source op, else it clears CF
-    ComparisonWrapper proc
+    ; Output: Sends the result's representation to the std output
+    ProductWrapper proc
+        Push bx
         Push si
         Push di
 
         Mov si, offset inputPrompt1
         Mov di, offset gargantuanA
         Call GargantuanInput
-        Jc END_ComparisonWrapper      ; Halt if error found
+        Jc END_ProductWrapper      ; Halt if error found
 
         Mov si, offset inputPrompt2
         Mov di, offset gargantuanB
         Call GargantuanInput
-        Jc END_ComparisonWrapper      ; Halt if error found
+        Jc END_ProductWrapper      ; Halt if error found
+
+        Mov bx, di  ; Set gargantuanB as multiplier param
+        Mov si, offset gargantuanA ; and A as multiplicand
+        Mov di, offset gargantuanC ; and C as result area
+        Call GargantuanProduct
+        Jc END_ProductWrapper
+
+        Mov si, di          ; Set result in SI parameter to print it
+        Call ResultWrapper  ; Show result and halt
+    END_ProductWrapper:
+        Pop di
+        Pop si
+        Pop bx
+        Ret
+    ProductWrapper endP
+
+    ; Requests operands for a comparison, and obtains their subtraction
+    ; Inputs: Expects valid decimal numbers
+    ; Output: Stores the result in destination op, AX - Sign and Zero flags
+    CompareWrapper proc
+        Push si
+        Push di
+
+        Mov si, offset inputPrompt1
+        Mov di, offset gargantuanA
+        Call GargantuanInput
+        Jc END_CompareWrapper      ; Halt if error found
+
+        Mov si, offset inputPrompt2
+        Mov di, offset gargantuanB
+        Call GargantuanInput
+        Jc END_CompareWrapper      ; Halt if error found
 
         Mov si, offset gargantuanA
-        Call NormalizeOperands      ; Set operand sizes to be same, especially before complement
-        Call GargantuanComplement   ; Obtain complement for subtrahend
+        Xchg di, si                ; Set comparison params: gargA _ gargB
+        Call GargantuanCompare     ; Obtain pseudo Sign and Zero flags in ax
 
-        Xchg di, si                 ; Set minuend in [DI], and subtrahend comp in [SI]
-        Call GargantuanAddition     ; Subtract via complement's addition, may set CF
-        ; If pending carry, minuend is above or equal
-        ; If no carry, minued is below
-
-
-        Pushf ; Create backup to avoid losing result
-        Call TruncateOperand        ; Compress result if possible
         Mov si, offset outputPrompt ; Print result prompt
         Call PrintLikeC
-        Popf
         
-    END_ComparisonWrapper:
+    END_CompareWrapper:
         Pop di
         Pop si
         Ret
-    ComparisonWrapper endP
+    CompareWrapper endP
 
     ; Requests operands for a '>' comparison, and prints the result
     ; Inputs: Expects valid decimal numbers
     ; Output: Sends the boolean result to the std output
     GreaterThanWrapper proc
         Mov si, offset outputFalse  ; Assume false by default
-        Call ComparisonWrapper      ; Compare two inputs
+        Call CompareWrapper         ; Compare two inputs
+
+        Shr ah, 1                   ; Restore CF for sign check
         Jnc END_GreaterThanWrapper  ; If below, skip to final print
 
-        Mov di, offset gargantuanA
-        Call IsGargantuanZero
+        Shr al, 1                   ; Restore CF for zero check
         Jc END_GreaterThanWrapper   ; If equal, skip
 
-        Mov si, offset outputTrue   ; Assumption false, change output string
+        Mov si, offset outputTrue   ; If above, correct false assumption
 
     END_GreaterThanWrapper:
         Call PrintLikeC
@@ -1067,8 +1289,10 @@ CodeSegment segment
     ; Inputs: Expects valid decimal numbers
     ; Output: Sends the boolean result to the std output
     LessThanWrapper proc
+        Push ax
         Mov si, offset outputFalse  ; Assume false by default
-        Call ComparisonWrapper      ; Compare two inputs
+        Call CompareWrapper         ; Compare two inputs
+        Shr ah, 1                   ; Restore CF for sign check
         Jc END_LessThanWrapper      ; If above or equal, skip to final print
 
         Mov si, offset outputTrue   ; Assumption false, change output string
@@ -1078,6 +1302,7 @@ CodeSegment segment
         Call PrintCRLF
 
         Mov programState, STATE_HALT ; Halt entire program
+        Pop ax
         Ret
     LessThanWrapper endP
 
@@ -1085,20 +1310,19 @@ CodeSegment segment
     ; Inputs: Expects valid decimal numbers
     ; Output: Sends the boolean result to the std output
     IsEqualWrapper proc
+        Push ax
         Mov si, offset outputFalse  ; Assume false by default
-        Call ComparisonWrapper      ; Compare two inputs
-
-        Mov di, offset gargantuanA
-        Call IsGargantuanZero
-        Jnc END_IsEqualWrapper      ; Subtraction was not zero, skip to printing
-
-        Mov si, offset outputTrue
+        Call CompareWrapper         ; Compare two inputs
+        Shr al, 1                   ; Restore CF for zero check
+        Jnc END_IsEqualWrapper      ; If not equal, skip to printing
+        Mov si, offset outputTrue   ; If equal, fix assumption
     
     END_IsEqualWrapper:
         Call PrintLikeC
         Call PrintCRLF
 
         Mov programState, STATE_HALT ; Halt entire program
+        Pop ax
         Ret
     IsEqualWrapper endP
 
@@ -1108,6 +1332,8 @@ CodeSegment segment
     ExampleRoutine proc
         Push ax
         Mov ax, programState
+        Call PrintAX
+        Call PrintCRLF
 
         Mov programState, STATE_HALT
     END_ExampleRoutine:
