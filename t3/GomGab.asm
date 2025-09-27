@@ -34,6 +34,12 @@
     ; ║ error. Tampoco se aceptan resultados que den numeros negativos. Si la   ║
     ; ║ operacion es una comparacion, se retorna la representacion en prosa de  ║
     ; ║ su valor booleano.                                                      ║
+    ; ║                                                                         ║
+    ; ║ Nota adicional                                                          ║
+    ; ║ Se utilizaron instrucciones de hileras en las rutinas de Shifts para    ║
+    ; ║ Gargantua, Copia de operandos (no utilizada) y comparacion entre valo-  ║
+    ; ║ res. Otras rutinas de hileras utilizan el acercamiento clasico, como    ║
+    ; ║ se solicito en el enunciado de la tarea.                                ║
     ; ╚═════════════════════════════════════════════════════════════════════════╝
     ; ╔═════════════════════════════════════════════════════════════════════════╗
     ; ║                        Analisis de Resultados                           ║
@@ -120,7 +126,7 @@ DataSegment segment
 
 ; String literals
     aboutMe db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. 16/Set/2025", CHAR_CR, CHAR_LF
-            db "Tarea Numero Gargantua | Autor: Gabriel Gomez Vega, 2021106483", CHAR_NULL
+            db "Tarea Numeros de Gargantua | Autor: Gabriel Gomez Vega, 2021106483", CHAR_NULL
     helpMe  db "Ingrese junto al programa un unico comando valido para numeros gargantua:", CHAR_CR, CHAR_LF
             db CHAR_HTAB, STATE_ADDITION,": Sumar dos valores gargantua", CHAR_CR, CHAR_LF
             db CHAR_HTAB, STATE_COMPLEMENT,": Complementar un valor", CHAR_CR, CHAR_LF
