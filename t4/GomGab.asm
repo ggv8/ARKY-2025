@@ -2,7 +2,7 @@
     ; ╔═════════════════════════════════════╦═══════════════════════════════════╗
     ; ║ Instituto Tecnologico de Costa Rica ║ Gabriel Gomez Vega                ║
     ; ║ Escuela de Computacion              ║ 2021106483                        ║
-    ; ║ Arquitectura de Computadoras        ║ DD de MM del 2025                 ║
+    ; ║ Arquitectura de Computadoras        ║ 29 de Setiembre del 2025          ║
     ; ╚═════════════════════════════════════╩═══════════════════════════════════╝
     ; ╔═════════════════════════════════════════════════════════════════════════╗
     ; ║                            Manual de Usuario                            ║
@@ -26,7 +26,6 @@ DataSegment segment
 ; Symbolic Constants
 
     ; Interruptions
-        DOS_INPUT_CHAR  = 01h
         DOS_PRINT_CHAR  = 02h
         DOS_PRINT_STR   = 09h
         DOS_EXIT        = 4Ch
@@ -41,43 +40,125 @@ DataSegment segment
     ;
 
     ; State Machine
-        STATE_HALT    = 0000h
-        STATE_DEFAULT = 0001h
-        STATE_HELP    = 0002h
-        STATE_EXAMPLE = 'A'
-        ; 8000h to FFFFh are reserved for errors, 8000h is a failsafe state
-        STATE_ERROR   = 8000h ; Used as reference for comparisons
-        ERROR_TEST    = 8001h
+        STATE_HALT      = 0000h
+        STATE_DEFAULT   = 0001h
+        STATE_HELP      = 'A'
+        STATE_CREATE    = 'C'
+        STATE_INSERT    = 'I'
+        STATE_OVERWRITE = 'S'
+        STATE_ENCRYPT   = 'E'
+        STATE_DECRYPT   = 'D'
+        STATE_CAPLINE   = 'V'
+        STATE_UPPERLINE = 'M'
+        STATE_LOWERLINE = 'm'
+        STATE_ERASELINE = 'B'
+        STATE_COPYCLIP  = 'c'
+        STATE_CUTCLIP   = 'x'
+        STATE_PASTECLIP = 'v'
+        STATE_REPLACEC  = 'F'
+
+        ; 8000h to FFFFh are reserved for errors
+        STATE_ERROR   = 8000h ; Reference for comparisons
+        ERROR_INV_CMD = 8001h ; Fail safe state
     ;
 
     ; Misc
         PSP_INPUT_OFFSET = 80h
+        MAX_LINE_SIZE    = 256
+        CL_INPUT_SIZE    = 128
     ;
 ;
 
 ; String literals
-    aboutMe db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. DD/MM/2025", CHAR_CR, CHAR_LF
-            db "Tarea --- | Autor: Gabriel Gomez Vega, 2021106483", CHAR_NULL
-    helpMe  db "Debe ingresar los siguientes datos:", CHAR_CR, CHAR_LF
-            db CHAR_HTAB, "{parametro}: {explicacion}", CHAR_CR, CHAR_LF
-            db CHAR_HTAB, "{parametro}: {explicacion}", CHAR_NULL
+    aboutMe db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. 29/Set/2025", CHAR_CR, CHAR_LF
+            db "Tarea Centurion | Autor: Gabriel Gomez Vega, 2021106483", CHAR_NULL
+    helpMe  db "Ingrese comandos validos y sus parametros:", CHAR_CR, CHAR_LF, CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Crear archivo (",STATE_CREATE, "):", CHAR_HTAB,"   -nombre", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Insertar linea (",STATE_INSERT, "):", CHAR_HTAB,"   -nombre -linea -columna -texto", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Sobreescribir linea (",STATE_OVERWRITE, "):   -nombre -linea -columna -texto", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Encriptar linea (",STATE_ENCRYPT, "):", CHAR_HTAB,"   -nombre -linea -caracter de encriptacion ", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Desencriptar linea (",STATE_DECRYPT, "):", CHAR_HTAB,"   -nombre -linea -caracter de encriptacion ", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Linea en versalles (",STATE_CAPLINE, "):", CHAR_HTAB,"   -nombre -linea", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Linea en mayusculas (",STATE_UPPERLINE, "):   -nombre -linea", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Linea en minusculas (",STATE_LOWERLINE, "):   -nombre -linea", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Borrar linea (",STATE_ERASELINE, "):", CHAR_HTAB,"   -nombre -linea", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Copiar rect. de texto (",STATE_COPYCLIP, "): -nombre -linea1 -columna1 -linea2 -columna2", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Cortar rect. de texto (",STATE_CUTCLIP, "): -nombre -linea1 -columna1 -linea2 -columna2", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Pegar rect. de texto (",STATE_PASTECLIP, "):  -nombre -linea -columna", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Buscar y reemplazar (",STATE_REPLACEC, "):   -nombre -caracter a reemplazar -texto", CHAR_NULL
+
+    outputPromptA   db "El texto se", CHAR_NULL
+    outputPromptB   db "correctamente:", CHAR_NULL
+    outputCreate    db "creo", CHAR_NULL
+    outputInsert    db "inserto", CHAR_NULL
+    outputOverwrite db "sobreescribio", CHAR_NULL
+    outputEncrypt   db "encripto", CHAR_NULL
+    outputDecrypt   db "desencripto", CHAR_NULL
+    outputCapLine   db "paso a versalles", CHAR_NULL
+    outputUpperLine db "paso a mayusculas", CHAR_NULL
+    outputLowerLine db "paso a minusculas", CHAR_NULL
+    outputEraseLine db "elimino", CHAR_NULL
+    outputCopyClip  db "copio al portapapeles", CHAR_NULL
+    outputCutClip   db "corto al portapapeles", CHAR_NULL
+    outputPasteClip db "pego del portapapeles", CHAR_NULL
+    outputReplaceC  db "coloco como reemplazo", CHAR_NULL
+
     errorLabel db "Error: ", CHAR_NULL
     errorNoState  db "El programa ha generado un error inesperado.", CHAR_NULL
     errorTestMsg  db "Este es un error de prueba para el vector de errores.", CHAR_NULL
 ;
 
 ; Look-up Tables
-    stateTable  dw STATE_DEFAULT,   StartWrapper
-    STATE_OFFSET = ($ - stateTable)
-                dw STATE_HELP,      PrintHelp
-                dw STATE_EXAMPLE,   ExampleRoutine
+
+    stateTable  dw STATE_DEFAULT,   StartWrapper,       0,  0
+    STATE_OFFSET = ($ - stateTable) ; Each entry contains the Code, Exec Routine*, Input Validation Routine*, Exec Str Output*
+                dw STATE_HELP,      PrintHelp,          0,  0
+                dw STATE_CREATE,    CreateFileWrapper,  ReadFileName,       offset outputCreate
+                dw STATE_INSERT,    InsertWrapper,      WriteLineWrapper,   offset outputInsert
+                dw STATE_OVERWRITE, OverwriteWrapper,   WriteLineWrapper,   offset outputOverwrite
+                dw STATE_ENCRYPT,   EncryptWrapper,     CaesarLineWrapper,  offset outputEncrypt
+                dw STATE_DECRYPT,   DecryptWrapper,     CaesarLineWrapper,  offset outputDecrypt
+                dw STATE_CAPLINE,   CapLineWrapper,     SelectLineWrapper,  offset outputCapLine
+                dw STATE_UPPERLINE, UpperLineWrapper,   SelectLineWrapper,  offset outputUpperLine
+                dw STATE_LOWERLINE, LowerLineWrapper,   SelectLineWrapper,  offset outputLowerLine
+                dw STATE_ERASELINE, EraseLineWrapper,   SelectLineWrapper,  offset outputEraseLine
+                dw STATE_COPYCLIP,  CopyClipWrapper,    ClipInputWrapper,   offset outputCopyClip
+                dw STATE_CUTCLIP,   CutClipWrapper,     ClipInputWrapper,   offset outputCutClip
+                dw STATE_PASTECLIP, PasteClipWrapper,   ClipOutputWrapper,  offset outputPasteClip
+                dw STATE_REPLACEC,  ReplaceCWrapper,    SearchWrapper,      offset outputReplaceC
+
     TABLE_SIZE = ($ - stateTable) / STATE_OFFSET
-                dw STATE_ERROR,     PrintError ; Fail safe state
+                dw ERROR_INV_CMD,   PrintError ; Fail safe state
+    
+    invalidChars db '/', '|', ':', ';', '?', '<', '>', '"', '*', '[', ']', ',', '.'
+    INV_VECTOR_SIZE = ($ - invalidChars)
 
     errorVector dw offset errorNoState, offset errorTestMsg
 ;
 
-    programState dw STATE_DEFAULT
+    programState       dw STATE_DEFAULT
+    stateEntryOffset   dw 0
+    
+    clipPath db ".\clipB.txt",    CHAR_NULL
+    tempFile db ".\tempEdit.txt", CHAR_NULL
+    filePath db CL_INPUT_SIZE dup(0)
+
+    newlineBuffer db CHAR_CR, CHAR_LF
+    coordinateA dw 0, 0 ; Line and column
+    coordinateA dw 0, 0
+
+    ; likePascalW format: first word stores line's byte count, followed by a buffer capable of fitting a full line of text + newline (CRLF)
+    sourceBuffer dw 0   ; To read from target file
+                 db (MAX_LINE_SIZE + 2) dup(0)
+    sourceFilePtr dw 0
+    
+    auxiliarBuffer dw 0 ; Stores line input or to read from clipboard
+                   db (MAX_LINE_SIZE + 2) dup(0)
+    auxiliarFilePtr dw 0
+    
+    searchBuffer db 0 ; Stores single char or string to find
+                 db CL_INPUT_SIZE dup(0)
+
     base dw 10
 DataSegment endS
 
@@ -220,40 +301,6 @@ CodeSegment segment
         Ret
     PrintError endP
 
-    ; Reads the command line's input back to the standard output
-    ; Inputs: Expects any input in command line
-    ; Outputs: Sends input back to standard output
-    ReadCL proc
-        Push ax
-        Push bx
-        Push cx
-        Push dx
-
-        Mov bx, PSP_INPUT_OFFSET
-        Mov cl, byte ptr es:[bx]    ; Obtain input size from offset ptr
-
-        Cmp cl, 0
-        Je END_ReadCL   ; Skip if empty
-
-        Xor al, al
-        Mov ah, DOS_PRINT_CHAR
-        Xor dh, dh    ; Clear in prep for int
-
-        Dec cl ; Ignore extra whitespace count
-        Inc bx ; Point to input-preceding whitespace
-    ITER_ReadCL:
-        Inc bx      ; Point to next byte
-        Mov dl, byte ptr es:[bx]
-        Int 21h     ; Print current char
-        Loop ITER_ReadCL
-
-    END_ReadCL:
-        Pop dx
-        Pop cx
-        Pop bx
-        Pop ax
-        Ret
-    ReadCL endP
 
     ; Reads the command line's input and stores parameters if present
     ; Inputs: Expects ...
@@ -271,7 +318,7 @@ CodeSegment segment
         Inc bx ; Point to first char
         
         ; Insert detailed logic here
-        Mov programState, STATE_EXAMPLE ; Placeholder
+        Mov programState, STATE_HALT ; Placeholder
 
         Jmp END_ReadInput  ; Skip error flagging line
     FLAG_NoInput:
@@ -282,6 +329,62 @@ CodeSegment segment
         Ret
     ReadInput endP
 
+    ReadFileName proc
+        Ret
+    ReadFileName endP
+
+    ReadInt proc
+        Ret
+    ReadInt endP
+
+    ReadString proc
+        Ret
+    ReadString endP
+
+    WriteLineWrapper proc
+        ; ReadFileName > path
+        ; ReadInt > Line1
+        ; ReadInt > Column1
+        ; ReadString > TextBuffer
+        Ret
+    WriteLineWrapper endP
+
+    CaesarLineWrapper proc
+        ; ReadFileName > path
+        ; ReadInt > Line1
+        ; Read char to byte buffer
+        Ret
+    CaesarLineWrapper endP
+
+    SelectLineWrapper proc
+        ; ReadFileName > path
+        ; ReadInt > Line1
+        Ret
+    SelectLineWrapper endP
+
+    ClipInputWrapper proc
+        ; ReadFileName > path
+        ; ReadInt > Line1
+        ; ReadInt > Column1
+        ; ReadInt > Line2
+        ; ReadInt > Column2
+        Ret
+    ClipInputWrapper endP
+
+    ClipOutputWrapper proc
+        ; ReadFileName > path
+        ; ReadInt > Line1
+        ; ReadInt > Column1
+        Ret
+    ClipOutputWrapper endP
+
+    SearchWrapper proc
+        ; ReadFileName > path
+        ; Read char to byte buffer
+        ; ReadString > TextBuffer
+        Ret
+    SearchWrapper endP
+
     ; Prints AboutMe and validates user inputs
     ; Inputs: Expects a valid command line input
     ; Output: Sends AboutMe to standard output
@@ -290,6 +393,59 @@ CodeSegment segment
         Call ReadInput
         Ret
     StartWrapper endP
+
+    CreateFileWrapper proc
+        Ret
+    CreateFileWrapper endP
+
+    InsertWrapper proc
+        Ret
+    InsertWrapper endP
+
+    OverwriteWrapper proc
+        Ret
+    OverwriteWrapper endP
+
+    EncryptWrapper proc
+        Ret
+    EncryptWrapper endP
+
+    DecryptWrapper proc
+        Ret
+    DecryptWrapper endP
+
+    CapLineWrapper proc
+        Ret
+    CapLineWrapper endP
+
+    UpperLineWrapper proc
+        Ret
+    UpperLineWrapper endP
+
+    LowerLineWrapper proc
+        Ret
+    LowerLineWrapper endP
+
+    EraseLineWrapper proc
+        Ret
+    EraseLineWrapper endP
+
+    CopyClipWrapper proc
+        Ret
+    CopyClipWrapper endP
+
+    CutClipWrapper proc
+        Ret
+    CutClipWrapper endP
+
+    PasteClipWrapper proc
+        Ret
+    PasteClipWrapper endP
+
+    ReplaceCWrapper proc
+        Ret
+    ReplaceCWrapper endP
+
 
     ; Routine for example state
     ; Inputs: ...
@@ -301,10 +457,11 @@ CodeSegment segment
         Ret
     ExampleRoutine endP
 
-    ; Finds row with state code and routine address corresponding to current program state
+    ; Finds the data row's offset for the current state of the program
     ; Inputs: programState - Expects a valid state code in variable
-    ; Outputs: BX with row address in stateTable. If invalid, BX points to failsafe row
-    FindStateRoutine proc
+    ; Outputs: [stateEntryOffset] Index to row address in stateTable.
+    ;                             If state invalid, index to fail safe row
+    FindStateEntry proc
         Push cx
         Push dx
 
@@ -314,45 +471,31 @@ CodeSegment segment
 
     ITER_FindStateRoutine:
         Cmp dx, word ptr stateTable[bx]
-        Je END_FindStateRoutine     ; Routine address found, halt
-        Add bx, STATE_OFFSET         ; Otherwise, point to next row
+        Je END_FindStateRoutine         ; Routine address found, halt
+        Add bx, STATE_OFFSET            ; Otherwise, point to next row
         Loop ITER_FindStateRoutine
+
         ; If out of range, BX points to failsafe state address
         Mov dx, word ptr stateTable[bx]
         Mov programState, dx ; Update invalid program state with error state
 
     END_FindStateRoutine:
-        Inc bx
-        Inc bx ; Adjust offset to point directly at state routine within table row
+        Mov stateEntryOffset, bx
         Pop dx
         Pop cx
         Ret
-    FindStateRoutine endP
+    FindStateEntry endP
 
     ; Calls the routine associated with the state of the program
-    ; Inputs: Expects a valid state in programState variable
+    ; Inputs: Expects a valid base address in [stateEntryOffset]
     ; Outputs: Executes a routine through its address
     RunState proc
-        Push cx
-        Push dx
         Push si
 
-        Xor si, si           ; Base to address stateTable contents
-        Mov cx, TABLE_SIZE
-        Mov dx, programState ; Copy to reg for mem to mem comparison
-
-    ITER_RunState:
-        Cmp dx, stateTable[si]
-        Je EXEC_State               ; Routine found
-        Add si, STATE_OFFSET         ; Otherwise, point to next row
-        Loop ITER_RunState
-        ; If out of range, SI points to failsafe, and executes it
-    EXEC_State:
-        Call word ptr stateTable[si+word] ; Offset SI by 2 to address the routine address, not the state code
+        Mov si, stateEntryOffset
+        Call word ptr stateTable[si + word] ; Offset by 2 to point at routine address
 
         Pop si
-        Pop dx
-        Pop cx
         Ret
     RunState endP
     
@@ -367,17 +510,31 @@ CodeSegment segment
         Mov ax, DataSegment
         Mov ds, ax ; Set data's address
 
+        
 
-        ;Mov programState, STATE_ERROR
-        Mov ax, STATE_EXAMPLE
-        call PrintAX
-        call PrintCRLF
+        Mov ax, 3C00h
+        Mov dx, offset path
+        Xor cx, cx
+        Int 21h
 
+        Jnc aux
+        Call PrintAX
+        Call PrintCRLF
+        Jmp exit
+
+    aux:
+        Mov bx, ax
+        Mov ax, 3E00h
+        Int 21h
+
+        Jmp exit
+
+    
     ITER_main:
-        Cmp programState, STATE_HALT
-        Je exit
+        Call FindStateEntry
         Call RunState
-        Jmp ITER_main
+        Cmp programState, STATE_HALT
+        Jne ITER_main
 
     exit:
         Mov al, 00h
