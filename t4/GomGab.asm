@@ -999,49 +999,66 @@ CodeSegment segment
         Ret
     ReadLine endP
 
-    ; Writes the current line of a buffer in the temporary work file
-    ; Inputs: [Dx] - Address of likePascalW buffer
-    ; Outputs: CF - Set if an error ocurred
-    WriteLineToTemp proc
+    ; Writes the current line of a buffer in a specified file
+    ; Inputs:    Bx  - File handle
+    ;           [Dx] - Address of likePascalW buffer
+    ; Outputs: CF - Set if an error ocurred ; TODO implement error flag
+    WriteLineToFile proc
         Push ax
-        Push bx
         Push cx
         Push dx
         Push si
 
-        Mov bx, tempHandle
         Xor al, al
         Mov ah, DOS_WRITE_FILE
         Mov si, dx              ; Obtain buffer address
         Mov cx, [si-word]       ; Write buffer up to its preceeding count variable
         Int 21h
-        Jc FLAG_WriteLineToTemp ; Flag error state if necessary
+        Jc FLAG_WriteLineToFile  ; Flag error state if necessary
 
         Cmp ax, cx
-        Jb FLAG_WriteLineToTemp ; Flag error if requested write count wasn't completed
+        Jb FLAG_WriteLineToFile  ; Flag error if requested write count wasn't completed
 
         Xor al, al
         Mov ah, DOS_WRITE_FILE
         Mov cx, 2
         Mov dx, offset newlineBuffer ; Set newline delimiter
         Int 21h
-        Jc FLAG_WriteLineToTemp ; Flag write error
+        Jc FLAG_WriteLineToFile  ; Flag write error
 
         Cmp ax, cx
-        Jb FLAG_WriteLineToTemp ; Flag write count error
-        Jmp END_WriteLineToTemp ; Skip error flagging if operation was succesful
+        Jb FLAG_WriteLineToFile  ; Flag write count error
+        Jmp END_WriteLineToFile  ; Skip error flagging if operation was succesful
 
-    FLAG_WriteLineToTemp:
+    FLAG_WriteLineToFile:
         Call PrintCRLF
         Call PrintAX        ; TODO: Error handling for read operation
         Call PrintCRLF
 
-    END_WriteLineToTemp:
+    END_WriteLineToFile:
         Pop si
         Pop dx
         Pop cx
-        Pop bx
         Pop ax
+        Ret
+    WriteLineToFile endP
+
+    WriteLineToClip proc
+        Push bx
+        Mov bx, clipHandle
+        Call WriteLineToFile
+        Pop bx
+        Ret
+    WriteLineToClip endP
+
+    ; Writes the current line of a buffer in the temporary work file
+    ; Inputs: [Dx] - Address of likePascalW buffer
+    ; Outputs: CF - Set if an error ocurred ; TODO implement error flag
+    WriteLineToTemp proc
+        Push bx
+        Mov bx, tempHandle
+        Call WriteLineToFile
+        Pop bx
         Ret
     WriteLineToTemp endP
 
@@ -1120,21 +1137,21 @@ CodeSegment segment
         Push cx
 
         Inc cx              ; Adjust bound to obtain line inside iter (reminder: BoundedTempCopy doesnt to exclude bound from copy logic)
-    ITER_BoundedTempCopy:
+    ITER_FindLineBound:
         Call ReadLine               ; Set buffer with line-size and contents, adjust file position at start of next line
         Cmp ax, 0
         Je FLAG_NoLineBound         ; If EoF is reached before line is found, clear flag
-        Loop ITER_BoundedTempCopy   ; Request lines until requested line is found
+        Loop ITER_FindLineBound   ; Request lines until requested line is found
         Stc                         ; Set flag for found line
-        Jmp END_BoundedTempCopy
+        Jmp END_FindLineBound
 
     FLAG_NoLineBound:
         Clc
-    END_BoundedTempCopy:
+    END_FindLineBound:
         Pop cx
         Pop ax
         Ret
-    BoundedTempCopy endP
+    FindLineBound endP
 
     InsertWrapper proc
         Push ax
