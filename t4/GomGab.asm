@@ -26,8 +26,12 @@ DataSegment segment
 ; Symbolic Constants
 
     ; Interruptions
+        DOS_INPUT_CHAR  = 01h
         DOS_PRINT_CHAR  = 02h
         DOS_PRINT_STR   = 09h
+        DOS_CREATE_FILE = 3Ch
+        DOS_OPEN_FILE   = 3Dh
+        DOS_CLOSE_FILE  = 3Eh
         DOS_EXIT        = 4Ch
     ;
 
@@ -62,12 +66,13 @@ DataSegment segment
         ; 8000h to FFFFh are reserved for errors
         STATE_ERROR   = 8000h ; Reference for comparisons
         ERROR_INV_CMD = 8001h ; Fail safe state
-        ERROR_ILLEGAL_PATH  = 8002h
-        ERROR_EXTENSION     = 8003h
-        ERROR_NON_INTEGER   = 8004h
-        ERROR_OVERFLOW      = 8005h
-        ERROR_MISSING_INPUT = 8006h
-        ERROR_COLUMN_LIMIT  = 8007h
+        ERROR_ILLEGAL_PATH   = 8002h
+        ERROR_EXTENSION      = 8003h
+        ERROR_NON_INTEGER    = 8004h
+        ERROR_OVERFLOW       = 8005h
+        ERROR_MISSING_INPUT  = 8006h
+        ERROR_COLUMN_LIMIT   = 8007h
+        ERROR_PATH_NOT_FOUND = 8008h
     ;
 
     ; Misc
@@ -95,9 +100,12 @@ DataSegment segment
             db CHAR_HTAB, "Pegar rect. de texto (",STATE_PASTECLIP, "):  -ruta -linea -columna", CHAR_CR, CHAR_LF
             db CHAR_HTAB, "Buscar y reemplazar (",STATE_REPLACEC, "):   -ruta -caracter a reemplazar -texto", CHAR_CR, CHAR_LF, CHAR_CR, CHAR_LF
             db "Ruta: nombre de archivo sin extension. Separador es \, se permite .\ al inicio", CHAR_NULL
+    
+    fileRewritePrompt db "El archivo ya existe. Desea sobreescribirlo? (s/n): ", CHAR_NULL
+    fileRewriteHalt   db "Se ha cancelado la creacion del archivo.", CHAR_NULL
 
-    outputPromptA   db "El texto se", CHAR_NULL
-    outputPromptB   db "correctamente:", CHAR_NULL
+    outputPromptA   db "El texto se ", CHAR_NULL
+    outputPromptB   db " correctamente:", CHAR_NULL
     outputCreate    db "creo", CHAR_NULL
     outputInsert    db "inserto", CHAR_NULL
     outputOverwrite db "sobreescribio", CHAR_NULL
@@ -114,6 +122,7 @@ DataSegment segment
 
     errorLabel db "Error: ", CHAR_NULL
     errorNoState  db "El programa ha generado un error inesperado.", CHAR_NULL
+    errorInvCommand  db "El comando solicitado no es valido. Vea la ayuda con A", CHAR_NULL
     errorIllegalPath db "La ruta del archivo no permite los simbolos "
     invalidChars db ',','/', '|', ':', ';', '?', '<', '>', '"', '*', '[', ']'
     INV_VECTOR_SIZE = ($ - invalidChars)
@@ -123,8 +132,8 @@ DataSegment segment
     errorOverflow   db "El numero de linea excede el rango maximo de 0 a 65535", CHAR_NULL
     errorMissingInput db "Debe completar los parametros del comando. Ingrese A para ver la ayuda", CHAR_NULL
     errorColumnLimit db "El numero de columna excede el rango permitido de 0 a 255", CHAR_NULL
+    errorPathNotFound db "La ruta solicitada para crear el archivo no se pudo encontrar", CHAR_NULL
 
-    errorTestMsg  db "Este es un error de prueba para el vector de errores.", CHAR_NULL
 ;
 
 ; Look-up Tables
@@ -149,8 +158,8 @@ DataSegment segment
     TABLE_SIZE = ($ - stateTable) / STATE_OFFSET
                 dw ERROR_INV_CMD,   PrintError, 0, 0 ; Fail safe state
 
-    errorVector dw offset errorNoState, offset errorTestMsg, offset errorIllegalPath, offset errorExtension, offset errorNonInteger
-                dw offset errorOverflow, offset errorMissingInput, offset errorColumnLimit
+    errorVector dw offset errorNoState, offset errorInvCommand, offset errorIllegalPath, offset errorExtension, offset errorNonInteger
+                dw offset errorOverflow, offset errorMissingInput, offset errorColumnLimit, offset errorPathNotFound
 ;
 
     programState       dw STATE_DEFAULT
@@ -772,8 +781,113 @@ CodeSegment segment
         Ret
     StartWrapper endP
 
+    ; Prints the corresponding result prompt of a command
+    ; Inputs: n/a
+    ; Outputs: Sends individual sentences to the standard output in order
+    PrintResultPrompt proc
+        Push si
+        Push bx
+
+        Mov si, offset outputPromptA
+        Call PrintLikeC
+
+        Mov bx, stateEntryOffset
+        Mov si, stateTable[bx + 3*word] ; Retrieve ptr from output str field in state data
+        Call PrintLikeC
+
+        Mov si, offset outputPromptB
+        Call PrintLikeC
+        Call PrintCRLF
+
+        Pop bx
+        Pop si
+        Ret
+    PrintResultPrompt endP
+
+    ; Attempts to locate the desired file by opening it
+    ; Inputs: [filePath] - Valid path of requested file to create
+    ; Outputs: CF - Sets CF if file is already present, clears if file is not present
+    IsFilePresent proc
+        Mov ah, DOS_OPEN_FILE
+        Xor al, al              ; Mode: Read only
+        Int 21h                 ; Attempt to locate file
+        Jc AUX_IsFilePresent    ; Skip closing file if an error ocurred
+        
+        
+        Mov bx, ax              ; Set opened file handle
+        Mov ah, DOS_CLOSE_FILE
+        Xor al, al
+        Int 21h                 ; Request file closure, CF = 0 (file present)
+        
+    AUX_IsFilePresent: ; CF = 1 (file not present)
+        Cmc            ; Complement to align value with boolean statement
+        Ret
+    IsFilePresent endP
+
+    ; Processes a request for a file creation command. It performs error checking
+    ; for existing files and missing paths
+    ; Inputs: [filePath] - Valid file name read from CL
+    ; Outputs: Result of the operation
     CreateFileWrapper proc
+        Push ax
+        Push bx
+        Push cx
+        Push dx
+        Push si
+        
+        Mov dx, offset filePath   ; Set ASCIIZ for file op
+
+        Call IsFilePresent
+        Jnc CREATE_CreateFileWrapper ; If file can't be opened, try creating it
+
+        Mov si, offset fileRewritePrompt
+        Call PrintLikeC
+        Mov ah, DOS_INPUT_CHAR
+    ITER_CreateFileWrapper:
+        Int 21h                    ; Request confirmation
+        Cmp al, 's'
+        Je AUX_CreateFileWrapper   ; Continue if yes
+        Cmp al, 'n'
+        Jne ITER_CreateFileWrapper ; Iter until valid input
+        Jmp CANCEL_CreateFileWrapper ; Halt if no
+    
+    AUX_CreateFileWrapper:
+        Call PrintCRLF
+    CREATE_CreateFileWrapper:
+        Xor al, al
+        Mov ah, DOS_CREATE_FILE ; Attempt to create file
+        Mov cx, 00h
+        Int 21h
+        Jnc CLOSE_CreateFileWrapper ; If successful, close file and print result
+
+        Mov programState, ERROR_PATH_NOT_FOUND ; Otherwise, flag error state
+        Jmp END_CreateFileWrapper
+    
+    CLOSE_CreateFileWrapper:
+        Mov bx, ax              ; Set file handle
+        Mov ah, DOS_CLOSE_FILE  ; Request file closure
+        Xor al, al
+        Int 21h
+
+        Call PrintResultPrompt
+        Mov si, dx              ; Set filepath for printing
+        Call PrintLikeC
+        Jmp HALT_CreateFileWrapper
+    
+    CANCEL_CreateFileWrapper:
+        Call PrintCRLF
+        Mov si, offset fileRewriteHalt
+        Call PrintLikeC
+        Call PrintCRLF
+
+    HALT_CreateFileWrapper:
         Mov programState, STATE_HALT
+    END_CreateFileWrapper:
+        Pop si
+        Pop dx
+        Pop cx
+        Pop bx
+        Pop ax
         Ret
     CreateFileWrapper endP
 
