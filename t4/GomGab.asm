@@ -32,7 +32,19 @@ DataSegment segment
         DOS_CREATE_FILE = 3Ch
         DOS_OPEN_FILE   = 3Dh
         DOS_CLOSE_FILE  = 3Eh
+        DOS_READ_FILE   = 3Fh
+        DOS_WRITE_FILE  = 40h
+        DOS_SET_FILEPTR = 42h
         DOS_EXIT        = 4Ch
+    ;
+
+    ; File Functions
+        FILE_ACCESS_READ  = 00h
+        FILE_ACCESS_WRITE = 01h
+        FILE_ACCESS_RW    = 02h
+        FILEPTR_SOF_POS   = 00h
+        FILEPTR_CUR_POS   = 01h
+        FILEPTR_EOF_POS   = 02h
     ;
 
     ; ASCII
@@ -132,7 +144,7 @@ DataSegment segment
     errorOverflow   db "El numero de linea excede el rango maximo de 0 a 65535", CHAR_NULL
     errorMissingInput db "Debe completar los parametros del comando. Ingrese A para ver la ayuda", CHAR_NULL
     errorColumnLimit db "El numero de columna excede el rango permitido de 0 a 255", CHAR_NULL
-    errorPathNotFound db "La ruta solicitada para crear el archivo no se pudo encontrar", CHAR_NULL
+    errorPathNotFound db "No se pudo localizar el archivo con la ruta ingresada", CHAR_NULL
 
 ;
 
@@ -165,8 +177,13 @@ DataSegment segment
     programState       dw STATE_DEFAULT
     stateEntryOffset   dw 0
     
+    clipHandle dw 0
     clipPath db ".\clipB.txt",    CHAR_NULL
-    tempFile db ".\tempEdit.txt", CHAR_NULL
+
+    tempHandle dw 0
+    tempPath db ".\~temp~.txt", CHAR_NULL
+
+    targetHandle dw 0
     filePath db CL_INPUT_SIZE dup(0)
 
     newlineBuffer db CHAR_CR, CHAR_LF
@@ -176,11 +193,9 @@ DataSegment segment
     ; likePascalW format: first word stores line's byte count, followed by a buffer capable of fitting a full line of text + newline (CRLF)
     sourceBuffer dw 0   ; To read from target file
                  db (MAX_LINE_SIZE + 2) dup(0)
-    sourceFilePtr dw 0
     
     auxiliarBuffer dw 0 ; Stores line input or to read from clipboard
                    db (MAX_LINE_SIZE + 2) dup(0)
-    auxiliarFilePtr dw 0
     
     charBuffer db 0
 
@@ -856,7 +871,7 @@ CodeSegment segment
     CREATE_CreateFileWrapper:
         Xor al, al
         Mov ah, DOS_CREATE_FILE ; Attempt to create file
-        Mov cx, 00h
+        Mov cx, 00h             ; Set file attributes
         Int 21h
         Jnc CLOSE_CreateFileWrapper ; If successful, close file and print result
 
@@ -891,8 +906,279 @@ CodeSegment segment
         Ret
     CreateFileWrapper endP
 
+    ; Adjusts the position of a file handle to point at the beginning of a line
+    ; Inputs: BX - File handle
+    ;         CX - Offset to apply from current position
+    ; Outputs: n/a
+    AlignFilePosition proc
+        Push ax
+        Push cx
+        Push dx
+
+        Mov ah, DOS_SET_FILEPTR
+        Mov al, FILEPTR_CUR_POS
+        Mov dx, cx              ; Parameter is CX:DX, set offset in lower value
+        Mov cx, 0FFFFh          ; Sign extend upper value
+        Neg dx                  ; Complement to move position backwards
+        Int 21h
+
+        Pop dx
+        Pop cx
+        Pop ax
+        Ret
+    AlignFilePosition endP
+
+    ; Counts the size of a line until a CR char is found
+    ; Inputs: DX - Offset to pascal buffer field
+    ;         CX - Total byte count in buffer
+    ; Outputs: [DX-word] - Stores line size in pascal size field
+    ;           CX       - Byte count excluding current line size + CRLF
+    CountLine proc
+        Push es
+        Push ax
+        Push si
+        Push di
+
+        Mov di, dx              ; To index likePascal buffer
+        Mov si, di
+        Dec si
+        Dec si                  ; To index pascal size field
+        Mov word ptr ds:[si], 0 ; Reset prev line count
+
+        Jcxz END_CountLine; If nothing was read, keep empty count
+        ; Otherwise, buffer is at least size 2 due to CRLF
+
+        Mov al, CHAR_CR ; To identify end of line
+    ITER_CountLine:
+        Cmp al, byte ptr ds:[di]    ; Halt if line is over
+        Je AUX_CountLine
+        Inc word ptr ds:[si]        ; Count column
+        Inc di                      ; Point to next char
+        Loop ITER_CountLine
+    
+    AUX_CountLine:  ; Cx has remaining byte count after iteration
+        Dec cx
+        Dec cx      ; Adjust for CRLF from current line
+
+    END_CountLine:
+        Pop di
+        Pop si
+        Pop ax
+        Pop es
+        Ret
+    CountLine endP
+
+    ; Reads an expected full line from a file and obtains its size
+    ; Inputs: BX - Open file handle
+    ;         DX - Offset to likePascalW buffer field
+    ; Outputs: [DX] - Line size (excluding CRLF) and contents in pascal buffer
+    ;           AX  - Total byte count read from file
+    ReadLine proc
+        Push cx
+        Push di
+
+        Xor al, al
+        Mov ah, DOS_READ_FILE
+        Mov cx, MAX_LINE_SIZE+2 ; Attempt to read a full line + CRLF chars
+        Int 21h                 ; Request at DX's buffer
+        Jnc AUX_ReadLine
+
+        Call PrintCRLF
+        Call PrintAX        ; TODO: Error handling for read operation
+        Call PrintCRLF
+        Jmp END_ReadLine
+
+    AUX_ReadLine:
+        Mov cx, ax             ; Set total byte count as param for upcoming routine
+        Call CountLine         ; Update size field with line size, set CX with remaining size
+        Call AlignFilePosition ; Set file position at the end of current line using CX as offset
+
+    END_ReadLine:
+        Pop di
+        Pop cx
+        Ret
+    ReadLine endP
+
+    ; Writes the current line of a buffer in the temporary work file
+    ; Inputs: [Dx] - Address of likePascalW buffer
+    ; Outputs: CF - Set if an error ocurred
+    WriteLineToTemp proc
+        Push ax
+        Push bx
+        Push cx
+        Push dx
+        Push si
+
+        Mov bx, tempHandle
+        Xor al, al
+        Mov ah, DOS_WRITE_FILE
+        Mov si, dx              ; Obtain buffer address
+        Mov cx, [si-word]       ; Write buffer up to its preceeding count variable
+        Int 21h
+        Jc FLAG_WriteLineToTemp ; Flag error state if necessary
+
+        Cmp ax, cx
+        Jb FLAG_WriteLineToTemp ; Flag error if requested write count wasn't completed
+
+        Xor al, al
+        Mov ah, DOS_WRITE_FILE
+        Mov cx, 2
+        Mov dx, offset newlineBuffer ; Set newline delimiter
+        Int 21h
+        Jc FLAG_WriteLineToTemp ; Flag write error
+
+        Cmp ax, cx
+        Jb FLAG_WriteLineToTemp ; Flag write count error
+        Jmp END_WriteLineToTemp ; Skip error flagging if operation was succesful
+
+    FLAG_WriteLineToTemp:
+        Call PrintCRLF
+        Call PrintAX        ; TODO: Error handling for read operation
+        Call PrintCRLF
+
+    END_WriteLineToTemp:
+        Pop si
+        Pop dx
+        Pop cx
+        Pop bx
+        Pop ax
+        Ret
+    WriteLineToTemp endP
+
+    ; Copies the remaining contents of a file to the temp file and closes both
+    ; Inputs: BX - File handle to copy
+    ;         [Dx] - Address of likePascalW buffer
+    ; Outputs: Closes files and replaces the original one with the temp contents
+    FinishTempFile proc
+        Push ax
+        Push bx
+
+    ITER_FinishTempFile:
+        Call ReadLine
+        Cmp ax, 0
+        Je CLOSE_FinishTempFile
+        Call WriteLineToTemp
+        Jmp ITER_FinishTempFile
+
+    CLOSE_FinishTempFile:
+        Mov ah, DOS_CLOSE_FILE
+        Xor al, al
+        Int 21h                 ; Close original file
+
+        Mov ah, DOS_CLOSE_FILE
+        Xor al, al
+        Mov bx, tempHandle
+        Int 21h                 ; Close temp file
+        
+        ; TODO:
+        ; Reemplazar por logica que cierra y elimina archivo original
+        ; para reemplazarlo por tempfile
+
+        Pop bx
+        Pop ax
+        Ret
+    FinishTempFile endP
+
+    ; Copies a file in the temp file until a line bound is found
+    ; Inserts newlines if there aren't enough lines in the original
+    ; Inputs:  BX  - File handle to copy
+    ;         [Dx] - Address of likePascalW buffer
+    ;          Cx  - Line number bound
+    ; Outputs: [Dx] - Contents of line number that bounded copy
+    BoundedTempCopy proc
+        Push ax
+
+        Jcxz END_BoundedTempCopy    ; Skip algorithm if line bound is immediate
+    ITER_BoundedTempCopy:
+        Call ReadLine           ; Set buffer with line-size and contents, adjust file position at start of next line
+        Cmp ax, 0
+        Je AUX_BoundedTempCopy  ; If EoF is reached before line is found, proceed to direct line insertion
+
+        Call WriteLineToTemp        ; Copy line to temp file + CRLF
+        Loop ITER_BoundedTempCopy   ; Recreate original file in temp file until requested line is found
+        Jmp END_BoundedTempCopy
+
+    AUX_BoundedTempCopy:         ; Avoids redundant ReadLines when an EoF is already know
+        Call WriteLineToTemp     ; Write empty line + CRLF
+        Loop AUX_BoundedTempCopy ; Until line num is met
+    
+    END_BoundedTempCopy:
+        Call ReadLine       ; Save line bound contents and prep file pointer at start of next line
+
+        Pop ax
+        Ret
+    BoundedTempCopy endP
+
+    ; Reads a text file until it finds the requested line bound
+    ; Inputs:  BX  - File handle to copy
+    ;         [Dx] - Address of likePascalW buffer
+    ;          Cx  - Line number bound
+    ; Outputs: [Dx] - Contents of line number that bounded copy
+    ;           CF  - Set if line exists, cleared if line is out of file's range
+    FindLineBound proc
+        Push ax
+        Push cx
+
+        Inc cx              ; Adjust bound to obtain line inside iter (reminder: BoundedTempCopy doesnt to exclude bound from copy logic)
+    ITER_BoundedTempCopy:
+        Call ReadLine               ; Set buffer with line-size and contents, adjust file position at start of next line
+        Cmp ax, 0
+        Je FLAG_NoLineBound         ; If EoF is reached before line is found, clear flag
+        Loop ITER_BoundedTempCopy   ; Request lines until requested line is found
+        Stc                         ; Set flag for found line
+        Jmp END_BoundedTempCopy
+
+    FLAG_NoLineBound:
+        Clc
+    END_BoundedTempCopy:
+        Pop cx
+        Pop ax
+        Ret
+    BoundedTempCopy endP
+
     InsertWrapper proc
+        Push ax
+        Push bx
+        Push cx
+        Push dx
+        Push si
+
+        ; Attempt to open requested file
+        Mov ah, DOS_OPEN_FILE
+        Mov al, FILE_ACCESS_READ
+        Mov dx, offset filePath
+        Int 21h
+        Jc FLAG_InsertNotFound  ; Flag error state if file can't be found
+        Mov targetHandle, ax    ; Save file handle for later use
+
+        Xor al, al
+        Mov ah, DOS_CREATE_FILE ; Create temporary work file
+        Mov cx, 00h             ; Set file attribute, and path
+        Mov dx, offset tempPath
+        Int 21h
+        Mov tempHandle, ax      ; Save handle for later use
+
+        Mov dx, offset sourceBuffer[word]  ; Set read buffer
+        Mov bx, targetHandle
+
+        Mov cx, coordinateA[0]  ; To iter until line is found
+        Call BoundedTempCopy    ; Find line contents and copy file up its predecessors
+        ; Logica que inserta texto en linea
+        Call FinishTempFile
+
+        Jmp HALT_InsertWrapper
+
+    FLAG_InsertNotFound:
+        Mov programState, ERROR_PATH_NOT_FOUND
+        Jmp END_InsertWrapper
+    HALT_InsertWrapper:
         Mov programState, STATE_HALT
+    END_InsertWrapper:
+        Pop si
+        Pop dx
+        Pop cx
+        Pop bx
+        Pop ax
         Ret
     InsertWrapper endP
 
@@ -950,17 +1236,6 @@ CodeSegment segment
         Mov programState, STATE_HALT
         Ret
     ReplaceCWrapper endP
-
-
-    ; Routine for example state
-    ; Inputs: ...
-    ; Outputs: Sets programState to halt if no error occured
-    ExampleRoutine proc
-        Call PrintAX
-        Call PrintCRLF
-        Mov programState, STATE_HALT
-        Ret
-    ExampleRoutine endP
 
     ; Finds the data row's offset for the current state of the program
     ; Inputs: [programState] - Expects a valid state code in variable
