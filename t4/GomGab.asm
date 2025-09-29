@@ -32,11 +32,13 @@ DataSegment segment
     ;
 
     ; ASCII
-        CHAR_NULL  = 00h
-        CHAR_CR    = 0Dh
-        CHAR_LF    = 0Ah
-        CHAR_SPACE = 20h
-        CHAR_HTAB  = 09h
+        CHAR_NULL   = 00h
+        CHAR_CR     = 0Dh
+        CHAR_LF     = 0Ah
+        CHAR_SPACE  = 20h
+        CHAR_HTAB   = 09h
+        CHAR_BSLASH = 5Ch
+        CHAR_DOT    = 2Eh
     ;
 
     ; State Machine
@@ -60,6 +62,12 @@ DataSegment segment
         ; 8000h to FFFFh are reserved for errors
         STATE_ERROR   = 8000h ; Reference for comparisons
         ERROR_INV_CMD = 8001h ; Fail safe state
+        ERROR_ILLEGAL_PATH  = 8002h
+        ERROR_EXTENSION     = 8003h
+        ERROR_NON_INTEGER   = 8004h
+        ERROR_OVERFLOW      = 8005h
+        ERROR_MISSING_INPUT = 8006h
+        ERROR_COLUMN_LIMIT  = 8007h
     ;
 
     ; Misc
@@ -73,19 +81,20 @@ DataSegment segment
     aboutMe db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. 29/Set/2025", CHAR_CR, CHAR_LF
             db "Tarea Centurion | Autor: Gabriel Gomez Vega, 2021106483", CHAR_NULL
     helpMe  db "Ingrese comandos validos y sus parametros:", CHAR_CR, CHAR_LF, CHAR_CR, CHAR_LF
-            db CHAR_HTAB, "Crear archivo (",STATE_CREATE, "):", CHAR_HTAB,"   -nombre", CHAR_CR, CHAR_LF
-            db CHAR_HTAB, "Insertar linea (",STATE_INSERT, "):", CHAR_HTAB,"   -nombre -linea -columna -texto", CHAR_CR, CHAR_LF
-            db CHAR_HTAB, "Sobreescribir linea (",STATE_OVERWRITE, "):   -nombre -linea -columna -texto", CHAR_CR, CHAR_LF
-            db CHAR_HTAB, "Encriptar linea (",STATE_ENCRYPT, "):", CHAR_HTAB,"   -nombre -linea -caracter de encriptacion ", CHAR_CR, CHAR_LF
-            db CHAR_HTAB, "Desencriptar linea (",STATE_DECRYPT, "):", CHAR_HTAB,"   -nombre -linea -caracter de encriptacion ", CHAR_CR, CHAR_LF
-            db CHAR_HTAB, "Linea en versalles (",STATE_CAPLINE, "):", CHAR_HTAB,"   -nombre -linea", CHAR_CR, CHAR_LF
-            db CHAR_HTAB, "Linea en mayusculas (",STATE_UPPERLINE, "):   -nombre -linea", CHAR_CR, CHAR_LF
-            db CHAR_HTAB, "Linea en minusculas (",STATE_LOWERLINE, "):   -nombre -linea", CHAR_CR, CHAR_LF
-            db CHAR_HTAB, "Borrar linea (",STATE_ERASELINE, "):", CHAR_HTAB,"   -nombre -linea", CHAR_CR, CHAR_LF
-            db CHAR_HTAB, "Copiar rect. de texto (",STATE_COPYCLIP, "): -nombre -linea1 -columna1 -linea2 -columna2", CHAR_CR, CHAR_LF
-            db CHAR_HTAB, "Cortar rect. de texto (",STATE_CUTCLIP, "): -nombre -linea1 -columna1 -linea2 -columna2", CHAR_CR, CHAR_LF
-            db CHAR_HTAB, "Pegar rect. de texto (",STATE_PASTECLIP, "):  -nombre -linea -columna", CHAR_CR, CHAR_LF
-            db CHAR_HTAB, "Buscar y reemplazar (",STATE_REPLACEC, "):   -nombre -caracter a reemplazar -texto", CHAR_NULL
+            db CHAR_HTAB, "Crear archivo (",STATE_CREATE, "):", CHAR_HTAB,"   -ruta", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Insertar linea (",STATE_INSERT, "):", CHAR_HTAB,"   -ruta -linea -columna -texto", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Sobreescribir linea (",STATE_OVERWRITE, "):   -ruta -linea -columna -texto", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Encriptar linea (",STATE_ENCRYPT, "):", CHAR_HTAB,"   -ruta -linea -caracter de encriptacion ", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Desencriptar linea (",STATE_DECRYPT, "):", CHAR_HTAB,"   -ruta -linea -caracter de encriptacion ", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Linea en versalles (",STATE_CAPLINE, "):", CHAR_HTAB,"   -ruta -linea", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Linea en mayusculas (",STATE_UPPERLINE, "):   -ruta -linea", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Linea en minusculas (",STATE_LOWERLINE, "):   -ruta -linea", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Borrar linea (",STATE_ERASELINE, "):", CHAR_HTAB,"   -ruta -linea", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Copiar rect. de texto (",STATE_COPYCLIP, "): -ruta -linea1 -columna1 -linea2 -columna2", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Cortar rect. de texto (",STATE_CUTCLIP, "): -ruta -linea1 -columna1 -linea2 -columna2", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Pegar rect. de texto (",STATE_PASTECLIP, "):  -ruta -linea -columna", CHAR_CR, CHAR_LF
+            db CHAR_HTAB, "Buscar y reemplazar (",STATE_REPLACEC, "):   -ruta -caracter a reemplazar -texto", CHAR_CR, CHAR_LF, CHAR_CR, CHAR_LF
+            db "Ruta: nombre de archivo sin extension. Separador es \, se permite .\ al inicio", CHAR_NULL
 
     outputPromptA   db "El texto se", CHAR_NULL
     outputPromptB   db "correctamente:", CHAR_NULL
@@ -105,6 +114,16 @@ DataSegment segment
 
     errorLabel db "Error: ", CHAR_NULL
     errorNoState  db "El programa ha generado un error inesperado.", CHAR_NULL
+    errorIllegalPath db "La ruta del archivo no permite los simbolos "
+    invalidChars db ',','/', '|', ':', ';', '?', '<', '>', '"', '*', '[', ']'
+    INV_VECTOR_SIZE = ($ - invalidChars)
+                 db CHAR_NULL
+    errorExtension  db "No se permite indicar una extension de archivo .*", CHAR_NULL
+    errorNonInteger db "Debe ingresar un digito decimal para parametros de linea y columna", CHAR_NULL
+    errorOverflow   db "El numero de linea excede el rango maximo de 0 a 65535", CHAR_NULL
+    errorMissingInput db "Debe completar los parametros del comando. Ingrese A para ver la ayuda", CHAR_NULL
+    errorColumnLimit db "El numero de columna excede el rango permitido de 0 a 255", CHAR_NULL
+
     errorTestMsg  db "Este es un error de prueba para el vector de errores.", CHAR_NULL
 ;
 
@@ -128,12 +147,10 @@ DataSegment segment
                 dw STATE_REPLACEC,  ReplaceCWrapper,    SearchWrapper,      offset outputReplaceC
 
     TABLE_SIZE = ($ - stateTable) / STATE_OFFSET
-                dw ERROR_INV_CMD,   PrintError ; Fail safe state
-    
-    invalidChars db '/', '|', ':', ';', '?', '<', '>', '"', '*', '[', ']', ',', '.'
-    INV_VECTOR_SIZE = ($ - invalidChars)
+                dw ERROR_INV_CMD,   PrintError, 0, 0 ; Fail safe state
 
-    errorVector dw offset errorNoState, offset errorTestMsg
+    errorVector dw offset errorNoState, offset errorTestMsg, offset errorIllegalPath, offset errorExtension, offset errorNonInteger
+                dw offset errorOverflow, offset errorMissingInput, offset errorColumnLimit
 ;
 
     programState       dw STATE_DEFAULT
@@ -145,7 +162,7 @@ DataSegment segment
 
     newlineBuffer db CHAR_CR, CHAR_LF
     coordinateA dw 0, 0 ; Line and column
-    coordinateA dw 0, 0
+    coordinateB dw 0, 0
 
     ; likePascalW format: first word stores line's byte count, followed by a buffer capable of fitting a full line of text + newline (CRLF)
     sourceBuffer dw 0   ; To read from target file
@@ -156,8 +173,7 @@ DataSegment segment
                    db (MAX_LINE_SIZE + 2) dup(0)
     auxiliarFilePtr dw 0
     
-    searchBuffer db 0 ; Stores single char or string to find
-                 db CL_INPUT_SIZE dup(0)
+    charBuffer db 0
 
     base dw 10
 DataSegment endS
@@ -303,87 +319,449 @@ CodeSegment segment
 
 
     ; Reads the command line's input and stores parameters if present
-    ; Inputs: Expects ...
+    ; Inputs: Expects parameters corresponding to the command input
     ; Outputs: Stores values in data variables, and flags errors if necessary
     ReadInput proc
         Push ax
         Push bx
+        Push cx
+        Push si
 
-        Mov bx, PSP_INPUT_OFFSET
-        Cmp byte ptr es:[bx], 0    ; Is there an input?
+        Mov si, PSP_INPUT_OFFSET
+        Xor ch, ch
+        Mov cl, byte ptr es:[si]
+        Cmp cx, 0                  ; Is there an input?
         Je FLAG_NoInput            ; If not, set new state, and halt proc
 
         ; If there is, retrieve values only
-        Inc bx ; Point to input-preceding whitespace
-        Inc bx ; Point to first char
+        Add cx, PSP_INPUT_OFFSET+1 ; Apply offset+1 to serve as bound for si
+        Inc si                     ; Point to input-preceding whitespace
+        Inc si                     ; Point to first char
         
         ; Insert detailed logic here
-        Mov programState, STATE_HALT ; Placeholder
+        Xor ah, ah
+        Mov al, byte ptr es:[si] ; Retrieve command input
+        Mov programState, ax     ; Assume command is valid
+        Call FindStateEntry
 
-        Jmp END_ReadInput  ; Skip error flagging line
+        Cmp programState, ERROR_INV_CMD ; Halt if command is not valid
+        Je END_ReadInput
+        Cmp programState, STATE_HELP ; Skip reading parameters for help
+        Je END_ReadInput
+
+        Inc si
+        Inc si      ; Try pointing to next parameter
+
+        Cmp si, cx  ; Halt if input only included command with no parameters
+        Jae FLAG_InputIncomplete
+        
+        Mov bx, stateEntryOffset ; Obtain state routine data for valid command
+        Call word ptr stateTable[bx + 2*word] ; Call cmd specific input validation
+        Jmp END_ReadInput                     ; Skip error flagging line
+
+    FLAG_InputIncomplete:
+        Mov programState, ERROR_MISSING_INPUT
+        Jmp END_ReadInput
+
     FLAG_NoInput:
         Mov programState, STATE_HELP
     END_ReadInput:
+        Pop si
+        Pop cx
         Pop bx
         Pop ax
         Ret
     ReadInput endP
 
+    ; Tests if a char value is valid in a path
+    ; Inputs: AL - Char value to test
+    ; Outputs: Sets CF if valid, clears CF if not valid
+    IsPathValid proc
+        Push cx
+        Push si
+
+        Xor si, si
+        Mov cx, INV_VECTOR_SIZE ;
+    ITER_IsPathValid:
+        Cmp al, byte ptr invalidChars[si]
+        Je FLAG_PathInvalid ; If found, char is invalid
+        Inc si
+        Loop ITER_IsPathValid
+
+        Stc ; If not found in blacklist, char is valid
+        Jmp END_IsPathValid
+
+    FLAG_PathInvalid:
+        Clc
+    END_IsPathValid:
+        Pop si
+        Pop cx
+        Ret
+    IsPathValid endP
+
+    ; Aux routine that validates a parameter as a complete file path or just a name
+    ; Inputs: ES:[SI] - Expects pointer to first char in parameter
+    ;         CX - Expects pointer to last char in entire CL input
+    ; Outputs: ES:[SI] - Sets pointer after last char of param if no error ocurred
+    ;          DS:[filepath] - Saves path as ASCIIZ, concatenates .txt extension
+    ;          CF            - Set if CL input is over, cleared in any other case
     ReadFileName proc
+        Push di
+
+        Xor di, di          ; Base address for filepath variable
+
+        Mov ah, CHAR_BSLASH
+        Mov al, CHAR_DOT    ; Set ax = '\.', little-endian = .\
+
+        Cmp word ptr es:[si], ax ; If input is not a relative path
+        Jne ITER_ReadFileName    ; skip to general validation algorithm
+
+        Mov word ptr filepath[di], ax ; Save relative path prefix
+        Inc di
+        Inc di
+        Inc si
+        Inc si ; Adjust both pointers to offset from prefix
+    
+    ITER_ReadFileName:
+        Cmp si, cx               ; If CL input is over, halt
+        Jae AUX_ReadFileName
+
+        Mov al, byte ptr es:[si] ; Retrieve char
+        Cmp al, CHAR_SPACE       ; If parameter was fully read, halt
+        Je END_ReadFileName      ; CF = 0 if Equal
+
+        Call IsPathValid         ; If char is not permitted in path, flag error
+        Jnc FLAG_IllegalPath
+
+        Cmp al, CHAR_DOT    ; Flag error if user attempted to specify an extension
+        Je FLAG_Extension   ; CF = 0 if Equal
+
+        Mov byte ptr filepath[di], al ; Save valid char in path buffer
+        Inc di                        ; Point to next byte in buffer
+        Inc si                        ; Point to next byte in input
+        Jmp ITER_ReadFileName         ; Continue until parameter or input is consumed
+
+    AUX_ReadFileName: ; Necessary to set CF for end of input, other halting cases clear implicitly 
+        Stc
+        Jmp END_ReadFileName
+
+    FLAG_IllegalPath:
+        Mov programState, ERROR_ILLEGAL_PATH
+        Jmp END_ReadFileName
+    FLAG_Extension:
+        Mov programState, ERROR_EXTENSION
+    
+    END_ReadFileName:
+        Mov byte ptr filepath[di],   '.'
+        Mov byte ptr filePath[di+1], 't'
+        Mov byte ptr filepath[di+2], 'x'
+        Mov byte ptr filepath[di+3], 't'
+        Pop di
         Ret
     ReadFileName endP
 
+    ; Aux routine that validates a parameter as a number for a line or column
+    ; Inputs: ES:[SI] - Expects pointer to first char in parameter
+    ;         DS:[DI] - Word sized variable to store value
+    ;         CX - Expects pointer to last char in entire CL input
+    ; Outputs: ES:[SI] - Sets pointer after last char of param if no error ocurred
+    ;          DS:[DI] - Int value from parameter
+    ;          CF      - Set if CL input is over, cleared in any other case
     ReadInt proc
+        Push ax
+        Push bx
+        Push dx
+
+        Xor ax, ax
+        Xor bh, bh
+    ITER_ReadInt:
+        Cmp si, cx               ; If CL input is over, halt
+        Jae AUX_ReadInt
+
+        Mov bl, byte ptr es:[si] ; Retrieve char value
+        Cmp bl, CHAR_SPACE       ; Halt if end of parameter was reached
+        Je END_ReadInt           ; CF = 0
+
+        Xor bl, 30h     ; Obtain int from char data
+        Cmp bl, 10      ; Halt and flag error if digit is not decimal
+        Jae FLAG_NonInt ; CF = 0 when bl = 10 or bl > 10
+
+        Mul base
+        Jc FLAG_Overflow ; Set error if input overflows into dx
+        Add ax, bx
+        Jc FLAG_Overflow ; Set error state if input exceeds word capacity
+
+        Inc si           ; Point to next byte
+        Jmp ITER_ReadInt
+
+    AUX_ReadInt:
+        Stc
+        Jmp END_ReadInt
+    
+    FLAG_Overflow:
+        Clc
+        Mov programState, ERROR_OVERFLOW
+        Jmp END_ReadInt
+
+    FLAG_NonInt:
+        Mov programState, ERROR_NON_INTEGER
+
+    END_ReadInt:
+        Mov word ptr ds:[di], ax
+        Pop dx
+        Pop bx
+        Pop ax
         Ret
     ReadInt endP
 
+    ; Aux routine that stores remaining CL input as a string parameter in a likePascalW buffer
+    ; Inputs: ES:[SI] - Expects pointer to first char in parameter
+    ;         DS:[DI] - LikePascalW buffer variable
+    ;         CX - Expects pointer to last char in entire CL input
+    ; Outputs: ES:[SI] - Sets pointer after last char of input
+    ;          DS:[DI] - Saves paramaeter in likePascalW format
     ReadString proc
+        Push ax
+        Push ds
+        Push es
+        Push cx
+        Push di
+
+        Sub cx, si          ; Obtain remaining byte count
+        Jbe END_ReadString  ; Halt if input was already consumed previously
+
+        Mov word ptr ds:[di], cx ; Otherwise, store byte count in Pascal variable's first field
+        Inc di
+        Inc di                   ; Set pointer at buffer field
+        Cld                      ; Prep for sequential transfer
+
+        Mov ax, ds               ; Save DATASG
+        Push es
+        Pop ds                   ; Set DS = PSP
+        Mov es, ax               ; and ES = DATASG
+        Rep Movsb                ; Transfer from PSP:SI (input) to DATASG:DI (variable)
+
+    END_ReadString:
+        Pop di
+        Pop cx
+        Pop es
+        Pop ds
+        Pop ax
         Ret
     ReadString endP
 
+    ; Aux routine, reads two int parameters corresponding to a line and column
+    ; Inputs: ES:[SI] - Pointer to first parameter in PSP input
+    ;         DS:[DI] - Pointer to coordinate variable
+    ; Outputs: ES:[SI]        - Sets pointer after last char of column param if no error ocurred
+    ;          DS:[DI]        - Int values for line and column numbers
+    ;          CF             - Set if input is over after reading column param
+    ;          [programState] - An error may be set for missing input if column is missing,
+    ;                           overflow if line num exceeds word capacity, if column exceeds
+    ;                           line limit of 256
+    ReadCoordinate proc
+        Push di
+
+        Call ReadInt                    ; Save int param at coordinate.line field
+        Jc FLAG_IncompletePair          ; Halt and set error state if input is over after line param
+        Cmp programState, STATE_ERROR   ; Halt if line num param had an error
+        Jae END_ReadCoordinate          ; CF = 0 for x >= y, won't lead to confusions for CF="input is over after col"
+
+        Inc si ; Set offset to first char of next param
+        Inc di
+        Inc di ; Set offset to coordinate.column field
+
+        Call ReadInt ; Save int param for column. Sets CF if input is over, may flag error states
+
+        Pushf                                ; Backup CF to avoid loss in adjustment logic
+        Cmp programState, ERROR_OVERFLOW
+        Jne AUX_ReadCoordinate1
+        Mov programState, ERROR_COLUMN_LIMIT ; Set correct error handling if overflow in column
+    
+    AUX_ReadCoordinate1:
+        Cmp programState, STATE_ERROR   ; Skip range validation if another error occured
+        Jae AUX_ReadCoordinate2
+
+        Cmp word ptr ds:[di], MAX_LINE_SIZE ; Skip error flagging if value is inside range
+        Jb AUX_ReadCoordinate2
+
+        Mov programState, ERROR_COLUMN_LIMIT ; Flag state error for column out of range
+
+    AUX_ReadCoordinate2: ; Restore CF result and halt
+        Popf
+        Jmp END_ReadCoordinate
+
+    FLAG_IncompletePair:
+        Clc                 ; Clear to avoid confusion with input is over after column param
+        Mov programState, ERROR_MISSING_INPUT
+    END_ReadCoordinate:
+
+        Pop di
+        Ret
+    ReadCoordinate endP
+
+    ; Wrapper for comprehensive input parsing and validation for Insertion and Overwrite commands
+    ; Inputs: ES:[SI] - Expects all requested parameters with valid values
+    ; Outputs: [programState] - May set an error state if there are missing parameters or invalid values
     WriteLineWrapper proc
-        ; ReadFileName > path
-        ; ReadInt > Line1
-        ; ReadInt > Column1
-        ; ReadString > TextBuffer
+        Push di
+
+        Call ReadFileName
+        Jc FLAG_WriteLineIncomplete     ; If input is over after reading a single param, halt & set error state
+        Cmp programState, STATE_ERROR
+        Jae END_WriteLineWrapper        ; Halt if filename param had an error
+
+        Inc si                          ; Ajust offset, prev routine halted at whitespace preceeding next param
+        Mov di, offset coordinateA      ; Set coord param
+
+        Call ReadCoordinate             ; Attempt to read line and column from input
+        Jc FLAG_WriteLineIncomplete     ; Halt if input's is over after reading column
+        Cmp programState, STATE_ERROR   ; Halt if either input had an error
+        Jae END_WriteLineWrapper
+
+        Inc si ; Point to last parameter
+        Mov di, offset auxiliarBuffer
+        Call ReadString
+
+        Jmp END_WriteLineWrapper
+
+    FLAG_WriteLineIncomplete:
+        Mov programState, ERROR_MISSING_INPUT
+    END_WriteLineWrapper:
+        Pop di
         Ret
     WriteLineWrapper endP
 
-    CaesarLineWrapper proc
-        ; ReadFileName > path
-        ; ReadInt > Line1
-        ; Read char to byte buffer
-        Ret
-    CaesarLineWrapper endP
-
+    ; Wrapper for comprehensive input parsing and validation for line cmds: Capitalization, UpperCase, LowerCase, & Erase
+    ; Inputs: ES:[SI] - Expects all requested parameters with valid values
+    ; Outputs: [programState] - May set an error state if there are missing parameters or invalid values
     SelectLineWrapper proc
-        ; ReadFileName > path
-        ; ReadInt > Line1
+        Push di
+        Call ReadFileName
+        Jc FLAG_SelectLineIncomplete     ; If input is over after reading a single param, halt & set error state
+        Cmp programState, STATE_ERROR
+        Jae END_SelectLineWrapper        ; Halt if filename param had an error
+
+        Inc si                          ; Set offset at beginning of next param
+        Mov di, offset coordinateA
+        Call ReadInt                    ; Save int param at coordinateA.line field, may flag an error state
+        Jmp END_SelectLineWrapper       ; Skip error flagging for incomplete params
+
+    FLAG_SelectLineIncomplete:
+        Mov programState, ERROR_MISSING_INPUT
+    END_SelectLineWrapper:
+        Pop di
         Ret
     SelectLineWrapper endP
 
+    ; Wrapper for comprehensive input parsing and validation for Encryption and Decryption commands
+    ; Inputs: ES:[SI] - Expects all requested parameters with valid values
+    ; Outputs: [programState] - May set an error state if there are missing parameters or invalid values
+    CaesarLineWrapper proc
+        Push ax
+        Call SelectLineWrapper       ; Attempt to read filename and line from input
+        Jc FLAG_CaesarLineIncomplete ; Halt if input is missing encryption char param
+        Cmp programState, STATE_ERROR
+        Jae END_CaesarLineWrapper    ; Halt if an error ocurred in either param
+
+        Inc si                       ; Set offset at beginning of next param
+        Mov al, byte ptr es:[si] 
+        Mov charBuffer, al           ; Store encryption key in char buffer
+        Jmp END_CaesarLineWrapper
+        
+    FLAG_CaesarLineIncomplete:
+        Mov programState, ERROR_MISSING_INPUT
+    END_CaesarLineWrapper:
+        Pop ax
+        Ret
+    CaesarLineWrapper endP
+
+    ; Wrapper for comprehensive input parsing and validation for Copy and Cut commands
+    ; Inputs: ES:[SI] - Expects all requested parameters with valid values
+    ; Outputs: [programState] - May set an error state if there are missing parameters or invalid values
     ClipInputWrapper proc
-        ; ReadFileName > path
-        ; ReadInt > Line1
-        ; ReadInt > Column1
-        ; ReadInt > Line2
-        ; ReadInt > Column2
+        Push di
+
+        Call ReadFileName
+        Jc FLAG_ClipInputIncomplete     ; If input is over after reading a single param, halt & set error state
+        Cmp programState, STATE_ERROR
+        Jae END_WriteLineWrapper        ; Halt if filename param had an error
+
+        Inc si                          ; Ajust offset, prev routine halted at whitespace preceeding next param
+        Mov di, offset coordinateA      ; Set coord param
+
+        Call ReadCoordinate             ; Attempt to read first upper left coordinate from input
+        Jc FLAG_ClipInputIncomplete     ; Halt if input's is over after reading column
+        Cmp programState, STATE_ERROR   ; Halt if either input had an error
+        Jae END_WriteLineWrapper
+
+        Inc si ; Point to last parameter
+        Mov di, offset coordinateB
+        Call ReadCoordinate ; Attempt to read first upper left coordinate from input, may flag state errors
+        Jmp END_WriteLineWrapper
+
+    FLAG_ClipInputIncomplete:
+        Mov programState, ERROR_MISSING_INPUT
+    END_ClipInputWrapper:
+        Pop di
         Ret
     ClipInputWrapper endP
 
+    ; Wrapper for comprehensive input parsing and validation for Clipboard Paste command
+    ; Inputs: ES:[SI] - Expects all requested parameters with valid values
+    ; Outputs: [programState] - May set an error state if there are missing parameters or invalid values
     ClipOutputWrapper proc
-        ; ReadFileName > path
-        ; ReadInt > Line1
-        ; ReadInt > Column1
+        Call SelectLineWrapper       ; Attempt to read filename and line from input
+        Jc FLAG_ClipOutputIncomplete ; Halt if input over before column param
+        Cmp programState, STATE_ERROR
+        Jae END_ClipOutputWrapper    ; Halt if an error ocurred in either param
+
+        Inc si                          ; Set offset at beginning of next param
+        Mov di, offset [coordinateA+word]
+        Call ReadInt                    ; Save int param in column field, may flag an error state
+        Jmp END_ClipOutputWrapper       ; Skip error flagging for incomplete params
+
+    FLAG_ClipOutputIncomplete:
+        Mov programState, ERROR_MISSING_INPUT
+    END_ClipOutputWrapper:
         Ret
     ClipOutputWrapper endP
 
+    ; Wrapper for comprehensive input parsing and validation for Find and Replace command
+    ; Inputs: ES:[SI] - Expects all requested parameters with valid values
+    ; Outputs: [programState] - May set an error state if there are missing parameters or invalid values
     SearchWrapper proc
-        ; ReadFileName > path
-        ; Read char to byte buffer
-        ; ReadString > TextBuffer
+        Push ax
+        Push di
+
+        Call ReadFileName
+        Jc FLAG_SearchIncomplete      ; If input is over after reading a single param, halt & set error state
+        Cmp programState, STATE_ERROR
+        Jae END_SearchWrapper         ; Halt if filename param had an error
+
+        Inc si                        ; Set offset at beginning of next param
+        Mov al, byte ptr es:[si]
+        Mov charBuffer, al            ; Store char target
+
+        Inc si
+        Inc si      ; Try pointing to next parameter
+
+        Cmp si, cx  ; Halt if input only included command and char with no replacement text param
+        Jae FLAG_SearchIncomplete
+
+        Mov di, offset auxiliarBuffer
+        Call ReadString
+        Jmp END_SearchWrapper
+
+    FLAG_SearchIncomplete:
+        Mov programState, ERROR_MISSING_INPUT
+    END_SearchWrapper:
+        Pop di
+        Pop ax
         Ret
     SearchWrapper endP
+
+    ; Execution wrappers
 
     ; Prints AboutMe and validates user inputs
     ; Inputs: Expects a valid command line input
@@ -395,54 +773,67 @@ CodeSegment segment
     StartWrapper endP
 
     CreateFileWrapper proc
+        Mov programState, STATE_HALT
         Ret
     CreateFileWrapper endP
 
     InsertWrapper proc
+        Mov programState, STATE_HALT
         Ret
     InsertWrapper endP
 
     OverwriteWrapper proc
+        Mov programState, STATE_HALT
         Ret
     OverwriteWrapper endP
 
     EncryptWrapper proc
+        Mov programState, STATE_HALT
         Ret
     EncryptWrapper endP
 
     DecryptWrapper proc
+        Mov programState, STATE_HALT
         Ret
     DecryptWrapper endP
 
     CapLineWrapper proc
+        Mov programState, STATE_HALT
         Ret
     CapLineWrapper endP
 
     UpperLineWrapper proc
+        Mov programState, STATE_HALT
         Ret
     UpperLineWrapper endP
 
     LowerLineWrapper proc
+        Mov programState, STATE_HALT
         Ret
     LowerLineWrapper endP
 
     EraseLineWrapper proc
+        Mov programState, STATE_HALT
         Ret
     EraseLineWrapper endP
 
     CopyClipWrapper proc
+        Mov programState, STATE_HALT
         Ret
     CopyClipWrapper endP
 
     CutClipWrapper proc
+        Mov programState, STATE_HALT
         Ret
     CutClipWrapper endP
 
     PasteClipWrapper proc
+        Mov programState, STATE_HALT
         Ret
     PasteClipWrapper endP
 
     ReplaceCWrapper proc
+        Mov programState, STATE_HALT
         Ret
     ReplaceCWrapper endP
 
@@ -458,10 +849,12 @@ CodeSegment segment
     ExampleRoutine endP
 
     ; Finds the data row's offset for the current state of the program
-    ; Inputs: programState - Expects a valid state code in variable
+    ; Inputs: [programState] - Expects a valid state code in variable
     ; Outputs: [stateEntryOffset] Index to row address in stateTable.
     ;                             If state invalid, index to fail safe row
+    ;          [programState] - Changed to fail safe state if value is invalid
     FindStateEntry proc
+        Push bx
         Push cx
         Push dx
 
@@ -469,20 +862,28 @@ CodeSegment segment
         Mov cx, TABLE_SIZE
         Mov dx, programState ; Copy to reg for mem to mem comparison
 
-    ITER_FindStateRoutine:
+        Cmp dx, STATE_ERROR ; If state is not a know error, continue to search
+        Jb ITER_FindStateEntry
+
+        Mov bx, TABLE_SIZE*STATE_OFFSET ; Otherwise, point to failsafe
+        Jmp END_FindStateEntry          ; but skip programState update
+        
+
+    ITER_FindStateEntry:
         Cmp dx, word ptr stateTable[bx]
-        Je END_FindStateRoutine         ; Routine address found, halt
+        Je END_FindStateEntry           ; Routine address found, halt
         Add bx, STATE_OFFSET            ; Otherwise, point to next row
-        Loop ITER_FindStateRoutine
+        Loop ITER_FindStateEntry
 
         ; If out of range, BX points to failsafe state address
         Mov dx, word ptr stateTable[bx]
         Mov programState, dx ; Update invalid program state with error state
 
-    END_FindStateRoutine:
+    END_FindStateEntry:
         Mov stateEntryOffset, bx
         Pop dx
         Pop cx
+        Pop bx
         Ret
     FindStateEntry endP
 
@@ -509,25 +910,6 @@ CodeSegment segment
 
         Mov ax, DataSegment
         Mov ds, ax ; Set data's address
-
-        
-
-        Mov ax, 3C00h
-        Mov dx, offset path
-        Xor cx, cx
-        Int 21h
-
-        Jnc aux
-        Call PrintAX
-        Call PrintCRLF
-        Jmp exit
-
-    aux:
-        Mov bx, ax
-        Mov ax, 3E00h
-        Int 21h
-
-        Jmp exit
 
     
     ITER_main:
