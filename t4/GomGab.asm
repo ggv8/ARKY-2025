@@ -1570,6 +1570,28 @@ CodeSegment segment
         Ret
     OverwriteWrapper endP
 
+    ; Applies a format from a function to each char in a line
+    ; Inputs:   [SI] - Address to line in likePascalW format
+    ;           [BX] - Address of function applied to each char
+    ; Outputs: [SI] - Updates line with function's format
+    FormatLine proc
+        Push cx
+        Push si
+    
+        Mov cx, word ptr ds:[si] ; Retrieve line size
+        Inc si                   ; Adjust prior to buffer contents
+    ITER_FormatLine:
+        Inc si              ; Point to next char
+        Call word ptr bx    ; Call function that expects [SI] = char as param
+
+        Loop ITER_FormatLine
+
+    END_FormatLine:
+        Pop si
+        Pop cx
+        Ret
+    FormatLine endP
+
     EncryptWrapper proc
         Mov programState, STATE_HALT
         Ret
@@ -1585,13 +1607,159 @@ CodeSegment segment
         Ret
     CapLineWrapper endP
 
+    ; Sets a char reference to uppercase if possible
+    ; Inputs: [SI] - Pointer to char
+    ; Outputs: [SI] - Alphabetic char in uppercase
+    SetUpperCase proc
+        Push ax
+        Mov al, byte ptr ds:[si]
+        Cmp al, 'a'
+        Jb END_SetUpperCase
+        Cmp al, 'z'
+        Ja END_SetUpperCase
+        Sub al, 20h ; Offset for upper to lower
+        Mov byte ptr ds:[si], al
+    END_SetUpperCase:
+        Pop ax
+        Ret
+    SetUpperCase endP
+
+    ; Processes a request for a uppercase line command. It performs error checking
+    ; for existing files
+    ; Inputs: [filePath] - Valid file name read from CL
+    ;         [coordinateA] - Line number
+    ; Outputs: Result of the operation
     UpperLineWrapper proc
+        Push ax
+        Push bx
+        Push cx
+        Push dx
+        Push si
+
+        ; Attempt to open requested file
+        Mov ah, DOS_OPEN_FILE
+        Mov al, FILE_ACCESS_READ
+        Mov dx, offset filePath
+        Int 21h
+        Jc FLAG_UpperLineWrapper  ; Flag error state if file can't be found
+        Mov targetHandle, ax    ; Save file handle for later use
+
+        Xor al, al
+        Mov ah, DOS_CREATE_FILE ; Create temporary work file
+        Mov cx, 00h             ; Set file attribute, and path
+        Mov dx, offset tempPath
+        Int 21h
+        Mov tempHandle, ax      ; Save handle for later use
+
+        Mov dx, offset sourceBuffer[word]  ; Set read buffer
+        Mov bx, targetHandle
+
+        Mov cx, coordinateA[0]  ; To iter until line is found
+        Call BoundedTempCopy    ; Find line contents and copy file up to its predecessors
+
+        Mov si, offset sourceBuffer ; Set line param to modify
+        Mov bx, offset SetUpperCase ; Set function to apply at each char
+        Call FormatLine             ; Obtain lowercase line
+
+        Mov bx, targetHandle ; Restore file handle before operating files
+        Call WriteLineToTemp
+
+        Call PrintResultPrompt
+        Call PrintLikePW ; SI already points to result buffer
+
+        Call FinishTempFile
+
+        Jmp HALT_UpperLineWrapper
+
+    FLAG_UpperLineWrapper:
+        Mov programState, ERROR_PATH_NOT_FOUND
+        Jmp END_UpperLineWrapper
+    HALT_UpperLineWrapper:
         Mov programState, STATE_HALT
+    END_UpperLineWrapper:
+        Pop si
+        Pop dx
+        Pop cx
+        Pop bx
+        Pop ax
         Ret
     UpperLineWrapper endP
 
+    ; Sets a char reference to lowercase if possible
+    ; Inputs: [SI] - Pointer to char
+    ; Outputs: [SI] - Alphabetic char in lowercase
+    SetLowerCase proc near
+        Push ax
+        Mov al, byte ptr ds:[si]
+        Cmp al, 'A'
+        Jb END_SetLowerCase
+        Cmp al, 'Z'
+        Ja END_SetLowerCase
+        Add al, 20h ; Offset for upper to lower
+        Mov byte ptr ds:[si], al
+    END_SetLowerCase:
+        Pop ax
+        Ret
+    SetLowerCase endP
+
+    ; Processes a request for a lowercase line command. It performs error checking
+    ; for existing files
+    ; Inputs: [filePath] - Valid file name read from CL
+    ;         [coordinateA] - Line number
+    ; Outputs: Result of the operation
     LowerLineWrapper proc
+        Push ax
+        Push bx
+        Push cx
+        Push dx
+        Push si
+
+        ; Attempt to open requested file
+        Mov ah, DOS_OPEN_FILE
+        Mov al, FILE_ACCESS_READ
+        Mov dx, offset filePath
+        Int 21h
+        Jc FLAG_LowerLineWrapper  ; Flag error state if file can't be found
+        Mov targetHandle, ax    ; Save file handle for later use
+
+        Xor al, al
+        Mov ah, DOS_CREATE_FILE ; Create temporary work file
+        Mov cx, 00h             ; Set file attribute, and path
+        Mov dx, offset tempPath
+        Int 21h
+        Mov tempHandle, ax      ; Save handle for later use
+
+        Mov dx, offset sourceBuffer[word]  ; Set read buffer
+        Mov bx, targetHandle
+
+        Mov cx, coordinateA[0]  ; To iter until line is found
+        Call BoundedTempCopy    ; Find line contents and copy file up to its predecessors
+
+        Mov si, offset sourceBuffer   ; Set line param to modify
+        Mov bx, offset SetLowerCase ; Set function to apply at each char
+        Call FormatLine             ; Obtain lowercase line
+
+        Mov bx, targetHandle ; Restore file handle before operating files
+        Call WriteLineToTemp
+
+        Call PrintResultPrompt
+        Call PrintLikePW ; SI already points to result buffer
+
+        Call FinishTempFile
+
+        Jmp HALT_LowerLineWrapper
+
+    FLAG_LowerLineWrapper:
+        Mov programState, ERROR_PATH_NOT_FOUND
+        Jmp END_LowerLineWrapper
+    HALT_LowerLineWrapper:
         Mov programState, STATE_HALT
+    END_LowerLineWrapper:
+        Pop si
+        Pop dx
+        Pop cx
+        Pop bx
+        Pop ax
         Ret
     LowerLineWrapper endP
 
