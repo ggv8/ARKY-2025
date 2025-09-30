@@ -1317,6 +1317,12 @@ CodeSegment segment
         Ret
     FindLineBound endP
 
+    ; Processes a request for a file creation command. It performs error checking
+    ; for existing files and missing paths
+    ; Inputs: [filePath] - Valid file name read from CL
+    ;         [coordinateA] - Line and column numbers
+    ;         [auxiliarBuffer] - Text to insert
+    ; Outputs: Result of the operation
     InsertWrapper proc
         Push ax
         Push bx
@@ -1352,7 +1358,10 @@ CodeSegment segment
 
         Mov dx, offset mergeBuffer[word] ; Set result for write operation
         Call WriteLineToTemp
-        ; Logic that prints result
+
+        Call PrintResultPrompt
+        Mov si, dx              ; Set filepath for printing
+        Call PrintLikeC
 
         Call FinishTempFile
 
