@@ -290,6 +290,33 @@ CodeSegment segment
         Ret
     PrintLikeC endP
 
+    ; Prints a like Pascal string reference char by char until its size count is over
+    ; Inputs: SI - Address to string variable
+    ; Outputs: Sends each char to standard output via DOS' routine
+    PrintLikePW proc
+        Push ax
+        Push dx
+        Push si
+
+        Mov cx, word ptr [si]   ; Retrieve pascal counter (word)
+        Jcxz END_PrintLikePW
+        
+        Xor al, al
+        Mov ah, DOS_PRINT_CHAR
+        Inc si                  ; Point to upper byte in preparation for loop
+    ITER_PrintLikePW:
+        Inc si                  ; Point to next char
+        Mov dl, byte ptr [si]   ; Read char
+        Int 21h
+        Loop ITER_PrintLikePW
+
+    END_PrintLikePW:
+        Pop si
+        Pop dx
+        Pop ax
+        Ret
+    PrintLikePW endP
+
     ; Print details about the program's creation
     ; Inputs: N/A
     ; Outputs: Reads aboutMe str to standard output, followed by a newline
@@ -1415,8 +1442,8 @@ CodeSegment segment
         Ret
     FindLineBound endP
 
-    ; Processes a request for a file creation command. It performs error checking
-    ; for existing files and missing paths
+    ; Processes a request for a line insertion command. It performs error checking
+    ; for existing files
     ; Inputs: [filePath] - Valid file name read from CL
     ;         [coordinateA] - Line and column numbers
     ;         [auxiliarBuffer] - Text to insert
@@ -1479,6 +1506,12 @@ CodeSegment segment
         Ret
     InsertWrapper endP
 
+    ; Processes a request for an overwrite line command. It performs error checking
+    ; for existing files
+    ; Inputs: [filePath] - Valid file name read from CL
+    ;         [coordinateA] - Line and column numbers
+    ;         [auxiliarBuffer] - Text to overwrite from
+    ; Outputs: Result of the operation
     OverwriteWrapper proc
         Push ax
         Push bx
@@ -1562,8 +1595,57 @@ CodeSegment segment
         Ret
     LowerLineWrapper endP
 
+    ; Processes a request for an erase line command. It performs error checking
+    ; for existing files
+    ; Inputs: [filePath] - Valid file name read from CL
+    ;         [coordinateA] - Line number
+    ; Outputs: Result of the operation
     EraseLineWrapper proc
+        Push ax
+        Push bx
+        Push cx
+        Push dx
+        Push si
+
+        ; Attempt to open requested file
+        Mov ah, DOS_OPEN_FILE
+        Mov al, FILE_ACCESS_READ
+        Mov dx, offset filePath
+        Int 21h
+        Jc FLAG_EraseNotFound  ; Flag error state if file can't be found
+        Mov targetHandle, ax    ; Save file handle for later use
+
+        Xor al, al
+        Mov ah, DOS_CREATE_FILE ; Create temporary work file
+        Mov cx, 00h             ; Set file attribute, and path
+        Mov dx, offset tempPath
+        Int 21h
+        Mov tempHandle, ax      ; Save handle for later use
+
+        Mov dx, offset sourceBuffer[word]  ; Set read buffer
+        Mov bx, targetHandle
+
+        Mov cx, coordinateA[0]  ; To iter until line is found
+        Call BoundedTempCopy    ; Find line contents and copy file up to its predecessors
+        ; Does not copy the found line in the file to delete it
+        Call PrintResultPrompt
+        Mov si, offset sourceBuffer ; Set filepath for printing
+        Call PrintLikePW
+
+        Call FinishTempFile
+        Jmp HALT_EraseLineWrapper
+
+    FLAG_EraseNotFound:
+        Mov programState, ERROR_PATH_NOT_FOUND
+        Jmp END_EraseLineWrapper
+    HALT_EraseLineWrapper:
         Mov programState, STATE_HALT
+    END_EraseLineWrapper:
+        Pop si
+        Pop dx
+        Pop cx
+        Pop bx
+        Pop ax
         Ret
     EraseLineWrapper endP
 
