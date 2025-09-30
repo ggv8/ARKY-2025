@@ -196,6 +196,9 @@ DataSegment segment
     
     auxiliarBuffer dw 0 ; Stores line input or to read from clipboard
                    db (MAX_LINE_SIZE + 2) dup(0)
+
+    mergeBuffer dw 0    ; To insert text, to overwrite in a line or to clip a line
+                db MAX_LINE_SIZE dup(0)
     
     charBuffer db 0
 
@@ -543,7 +546,7 @@ CodeSegment segment
     ;         DS:[DI] - LikePascalW buffer variable
     ;         CX - Expects pointer to last char in entire CL input
     ; Outputs: ES:[SI] - Sets pointer after last char of input
-    ;          DS:[DI] - Saves paramaeter in likePascalW format
+    ;          DS:[DI] - Saves parameter in likePascalW format
     ReadString proc
         Push ax
         Push ds
@@ -890,7 +893,7 @@ CodeSegment segment
         Jmp HALT_CreateFileWrapper
     
     CANCEL_CreateFileWrapper:
-        Call PrintCRLF
+        Call PrintCRLF          ; Print result of command cancellation
         Mov si, offset fileRewriteHalt
         Call PrintLikeC
         Call PrintCRLF
@@ -1043,6 +1046,9 @@ CodeSegment segment
         Ret
     WriteLineToFile endP
 
+    ; Writes the current line of a buffer in the clipboard file
+    ; Inputs: [Dx] - Address of likePascalW buffer
+    ; Outputs: CF - Set if an error ocurred ; TODO implement error flag
     WriteLineToClip proc
         Push bx
         Mov bx, clipHandle
@@ -1095,6 +1101,164 @@ CodeSegment segment
         Pop ax
         Ret
     FinishTempFile endP
+
+    ; Transfers a subtring to a buffer given a byte count
+    ; Inputs:  CX  - Amount of bytes to copy
+    ;         [SI] - String to copy from
+    ;         [DI] - Address of storage buffer
+    ; Outputs: [DI] - Copy of substring
+    MoveSubstringCX proc
+        Push ax
+        Push cx
+        Push si
+        Push di
+
+        Jcxz END_MoveSubstringCX    ; Skip algorithm if request is zero transfer
+    ITER_MoveSubstringCX:
+        Mov al, byte ptr ds:[si]    ; Retrieve char from substring
+        Mov byte ptr ds:[di], al    ; Store in destination area
+        Inc si
+        Inc di                      ; Advance pointers
+        Loop ITER_MoveSubstringCX
+
+    END_MoveSubstringCX:
+        Pop di
+        Pop si
+        Pop cx
+        Pop ax
+        Ret
+    MoveSubstringCX endP
+
+    ; Writes space chars to a buffer area up to an specified amount
+    ; Inputs:  CX - Amount of spaces to write
+    ;         [DI] - Address of storage buffer
+    ; Outputs: [DI] - Buffer with N space characters
+    WriteSpacesCX proc
+        Push cx
+        Push di
+
+        Jcxz END_WriteSpacesCX  ; Skip zero request
+    ITER_WriteSpacesCX:
+        Mov byte ptr ds:[di], CHAR_SPACE ; Transfer immed to memory
+        Inc di                           ; Point to next area
+        Loop ITER_WriteSpacesCX
+
+    END_WriteSpacesCX:
+        Pop di
+        Pop cx
+        Ret
+    WriteSpacesCX endP
+
+    ; Compares Cx with [Si] and returns the min value between them
+    ; Inputs: Cx, [Si] - unsigned int values to compare
+    ; Outputs: Cx - Contains the smallest value
+    GetMinCxSi proc
+        Cmp cx, word ptr ds:[si]    ; Skip value swap if cx is already min
+        Jbe END_GetMinCxSi
+        Mov cx, word ptr ds:[si]    ; Update cx with SI's lower value
+    END_GetMinCxSi:
+        Ret
+    GetMinCxSi endP
+
+    ; Aux to InsertLine: Gets byte count for a feasible insertion
+    ; taking into account insertion size and available space
+    ; Inputs:  [Cx]          - Expects column value requested for insertion
+    ;          [mergeBuffer] - Assumes updated byte count for buffer within 0 to MAX_LINE_SIZE
+    ; Outputs: Cx - Amount of times to loop a byte transfer from insertion line 
+    AvailableInsertionCX proc
+        Mov cx, MAX_LINE_SIZE
+        Sub cx, mergeBuffer     ; Obtain remaining line capacity
+        Call GetMinCxSi         ; min(both). capacity < insert size: get substring. cap >= insert: only copy up to insert size
+        Ret
+    AvailableInsertionCX endP
+
+    ; Aux to InsertLine: Attempts to include right substring after text insertion
+    ; Inputs:  [SI]          - Expects pointer to insertion line's byte count
+    ;          [mergeBuffer] - Assumes updated byte count for buffer within 0 to MAX_LINE_SIZE
+    ; Outputs: [mergeBuffer+word] - Updates buffer with right substring contents if possible
+    BestFitRightSubstring proc
+        Push bx
+        Cmp mergeBuffer, MAX_LINE_SIZE
+        Je END_BestFitRightSubstring   ; If right substring can't fit, halt. Otherwise, include as many chars as possible
+
+        Mov si, dx  ; Point to current line's size
+        Mov bx, dx
+        Inc bx
+        Inc bx      ; To point at buffer offset
+       
+        Sub word ptr ds:[si], cx  ; Original size - col = right substring size
+        Add bx, cx                ; Base address  + col = start of substring
+        Call AvailableInsertionCX ; Get counter for byte insertion
+
+        Xchg si, bx          ; Prep SI as substring param
+        Call MoveSubstringCX
+        Add mergeBuffer, cx  ; Update complete line's size field
+
+    END_BestFitRightSubstring:
+        Pop bx
+        Ret
+    BestFitRightSubstring endP
+
+    ; Inserts a text line to the current line of a file
+    ; Inputs: [Dx] - likePascalW variable with current line size and buffer
+    ;         [Ax] - likePascalW variable with line to insert in buffer
+    ;          Cx  - Column value to insert at
+    InsertLine proc
+        Push cx
+        Push si
+        Push di
+
+        Mov di, offset mergeBuffer[word] ; Work area to combine lines
+        Mov si, dx                 ; To access current line's buffer
+        Inc si
+        Inc si                     ; Point to buffer field
+        Cmp cx, word ptr ds:[si-word] ; If requested column is greater than available in line, extend line size
+        Ja AUX_InsertLine             ; Note: Col is restricted from 0 to 255, case 256=256 is impossible, requires no validation
+
+        Call MoveSubstringCX    ; Obtain current line's left substring in DI
+        Mov mergeBuffer, cx     ; Track remaining space for line insertion
+        Add di, cx              ; Offset area to write after left substring
+
+        Push cx ; Save column value to later use
+        Mov si, ax                  ; Point to insertion line's size
+        Call AvailableInsertionCX   ; Obtain count for MoveSubstring accounting for best fit insertion
+
+        Inc si
+        Inc si                  ; Point to insertion's buffer, CX and DI are already set
+        Call MoveSubstringCX    ; Insertion complete: Line + Whitespaces + Insertion best fit
+        Add mergeBuffer, cx     ; Update size field to match buffer contents
+        Add di, cx              ; Offset area for potential last write
+        Pop cx
+        
+        Call BestFitRightSubstring ; Try to include right subtring if capacity allows it
+        Jmp END_InsertLine
+
+    AUX_InsertLine:
+        Mov mergeBuffer, cx      ; Update size ahead of time with column as target
+        Push cx
+        Mov cx, word ptr ds:[si-word] ; Prep to copy entire line to buffer, work area (DI) already set
+        Call MoveSubstringCX          ; Obtain line copy
+        Add di, cx                    ; Offset area to continue writing after line copy
+        Pop cx
+
+        Sub cx, word ptr ds:[si-word] ; Obtain count of spaces required to extend up to desired column
+        Call WriteSpacesCX       ; Write required spaces, work area's size = column = line size + whitespace count
+        Add di, cx               ; Offset in prep for next write operation
+
+        Mov si, ax                  ; Point to insertion line's size
+        Call AvailableInsertionCX   ; Obtain count for MoveSubstring accounting for best fit insertion
+
+        Inc si
+        Inc si                  ; Point to insertion's buffer, CX and DI are already set
+        Call MoveSubstringCX    ; Insertion complete: Line + Whitespaces + Insertion best fit
+        Add mergeBuffer, cx     ; Update size field to match buffer contents
+
+    END_InsertLine:
+        Pop di
+        Pop si
+        Pop cx
+        Ret
+    InsertLine endP
 
     ; Copies a file in the temp file until a line bound is found
     ; Inserts newlines if there aren't enough lines in the original
@@ -1179,8 +1343,17 @@ CodeSegment segment
         Mov bx, targetHandle
 
         Mov cx, coordinateA[0]  ; To iter until line is found
-        Call BoundedTempCopy    ; Find line contents and copy file up its predecessors
-        ; Logica que inserta texto en linea
+        Call BoundedTempCopy    ; Find line contents and copy file up to its predecessors
+        
+        Mov cx, coordinateA[word]   ; To locate column in current line
+        Sub dx, word                ; Point buffer back to size field for upcoming routine
+        Mov ax, offset auxiliarBuffer ; Set likePW line to insert
+        Call InsertLine               ; Obtain result in mergeBuffer
+
+        Mov dx, offset mergeBuffer[word] ; Set result for write operation
+        Call WriteLineToTemp
+        ; Logic that prints result
+
         Call FinishTempFile
 
         Jmp HALT_InsertWrapper
