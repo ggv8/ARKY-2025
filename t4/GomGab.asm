@@ -7,6 +7,74 @@
     ; ╔═════════════════════════════════════════════════════════════════════════╗
     ; ║                            Manual de Usuario                            ║
     ; ╠═════════════════════════════════════════════════════════════════════════╣
+    ; ║ Este programa permite una creacion y edicion simple de archivos de tex- ║
+    ; ║ to. Es capaz de crear un archivo a partir de una ruta ingresada. Puede  ║
+    ; ║ insertar lineas de texto, sobreescribirlas, eliminarlas, aplicar un es- ║
+    ; ║ tilo y encriptar lineas. A continuacion se detalla su uso.              ║
+    ; ║                                                                         ║
+    ; ║ Entradas                                                                ║
+    ; ║ El programa se maneja a traves de la linea de comandos. Cada operacion  ║
+    ; ║ esta asociada a una letra significativa que debe ingresarse primero.    ║
+    ; ║ Todos los comandos, excepto el de ayuda, esperan parametros adicionales ║
+    ; ║ que debe ingresar en orden. Se asume que cada uno esta separado por un  ║
+    ; ║ unico espacio en blanco. De lo contrario, el programa puede llegar a re ║
+    ; ║ portar su dato como erroneo. Pronto se detallara las restricciones.     ║
+    ; ║                                                                         ║
+    ; ║ Al invocarse, el programa siempre desplegara un mensaje acerca del mis- ║
+    ; ║ mo. Si no se ingresa ninguna entrada, el programa despliega un mensaje  ║
+    ; ║ de ayuda que detalla los comandos y sus parametros. Si no se ingresa na-║
+    ; ║ da tambien lo desplegara. Hay diversos parametros, pero se resumen en:  ║
+    ; ║     - Ruta:                                                             ║
+    ; ║            Indica el nombre del archivo a crear o editar. Puede ser una ║
+    ; ║            ruta completa o solo el nombre. No se permite indicar carac- ║
+    ; ║            teres no validos en DOS como , / | : ; ? < > " * [ ]         ║
+    ; ║            Tampoco se permite indicar un . para la extension. Solo se   ║
+    ; ║            procesan archivos de texto y el programa hace dicha gestion. ║
+    ; ║            La excepcion del . es para direcciones relativas con .\      ║
+    ; ║                                                                         ║
+    ; ║     - Linea/Columna:                                                    ║
+    ; ║            Indica posicion vertical y horizontal del documento contan-  ║
+    ; ║            do a partir del 0. El programa soporta un maximo de 65 535   ║
+    ; ║            lineas enumerables. El rango de la columna es solo de 0 a    ║
+    ; ║            255. El salto de linea no cuenta como parte de la enumera-   ║
+    ; ║            cion. Solo se permiten digitos decimales                     ║
+    ; ║     - Texto:                                                            ║
+    ; ║            La redaccion que el usuario quiere ingresar. Solo se valida  ║
+    ; ║            que se incluya cuando se solicita.                           ║
+    ; ║     - Caracter:                                                         ║
+    ; ║             Sirve ya sea para una llave para encriptar/desencriptar o   ║
+    ; ║             para la busqueda y reemplazo de un caracter                 ║
+    ; ║                                                                         ║
+    ; ║ El programa valida tambien que se ingresen todos los parametros necesa- ║
+    ; ║ rios. En comandos que no son de -texto se ignora cualquier entrada no   ║
+    ; ║ solicitada despues del ultimo parametro.                                ║
+    ; ║                                                                         ║
+    ; ║ El comando para crear archivos consulta por confirmacion si el archivo  ║
+    ; ║ que se solicito ya existe. Solo acepta entradas (s/n) para indicar la   ║
+    ; ║ respuesta. De lo contrario, espera hasta que se ingrese un valor valido ║
+    ; ║ Si en una operacion de edicion no se logra ubicar el archivo por su ru- ║
+    ; ║ ta, esto se reporta como un error.                                      ║
+    ; ║                                                                         ║
+    ; ║ El finalizar una operacion, el programa reporta el resultado relevante  ║
+    ; ║ en pantalla y actualiza el archivo. Trabaja con un archivo borrador que ║
+    ; ║ luego reemplaza al original. Dicho archivo se llama ~temp~.txt por lo   ║
+    ; ║ que debe evitar guardar datos valiosos bajo un archivo del mismo nombre ║
+    ; ║ colocado en el directorio desde el que invoque el programa.             ║
+    ; ║                                                                         ║
+    ; ║ A la hora de insertar lineas, el programa puede truncar los contenidos  ║
+    ; ║ originales tanto de la linea como de su entrada si estos exceden el li- ║
+    ; ║ mite de columna. Lo mismo ocurre en el caso de sobreescribir. Sin embar ║
+    ; ║ go, nunca se sobreescribe o inserta por encima del cambio de linea.     ║
+    ; ║ Si se solicitan lineas o columnas no presentes en el archivo, el progra ║
+    ; ║ ma se encarga de agregarlos                                             ║
+    ; ║                                                                         ║
+    ; ║ Los formatos de estilo disponibles son Versalles, Todo Mayusculas y To- ║
+    ; ║ do Minusculas. La encriptacion no trabaja con caracteres de control, so ║
+    ; ║ lo opera con simbolos desplegables. Lo mismo aplica para la desencripta ║
+    ; ║ cion.                                                                   ║
+    ; ║                                                                         ║
+    ; ║ El programa carece funcionalidades de clipboard y reemplazo :c Mas deta ║
+    ; ║ lles debajo del analisis de resultados.                                 ║
     ; ║                                                                         ║
     ; ╚═════════════════════════════════════════════════════════════════════════╝
     ; ╔═════════════════════════════════════════════════════════════════════════╗
@@ -16,10 +84,87 @@
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
     ; ║ Documentacion                                            ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Documentacion                                            ║      A       ║
+    ; ║ Despliegue de la Ayuda                                   ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Documentacion                                            ║      A       ║
+    ; ║ Lectura de la linea de comandos                          ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Lectura de la entrada estandar                           ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Restricciones de la entrada                              ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Manejo de errores                                        ║      B       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Creacion de archivos                                     ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Insercion de texto                                       ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Sobreescritura de texto                                  ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Expansion del archivo (lineas, columnas)                 ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Encriptacion                                             ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Desencriptacion                                          ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Estilos de linea: Versalles, Mayus, Minus                ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Eliminar linea                                           ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Copy al clipboard                                        ║      D       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Corta al clipboard                                       ║      D       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Paste del clipboard                                      ║      D       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Buscar y reemplazar (caracter)                           ║      D       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
     ; ╚══════════════════════════════════════════════════════════╩══════════════╝
+
+    ; Explicacion adicional
+
+    ; 1) Manejo de errores (B)
+    ; Si bien se manejan los errores de entrada, se tiene un control laxo de los posibles errores de archivos
+    ; Esto se debe mas que nada a la realizacion de pruebas en un entorno controlado (por ejemplo espacio abundante en disco)
+    ; Por lo que no se priorizo la validacion de esos errores. Sin embargo, no se ignoro por completo en el diseño. Se puede
+    ; comprobar que hay secciones de codigo en las que se tiene de placeholder una impresion del ax para ver el codigo de error,
+    ; acompañado de comentarios TODO de auto recordatorio. La idea era tras completar todo el programa, agregar los saltos, banderas,
+    ; condiciones, etc. que permitieran al programa detenerse de manera sencilla al detectar un error.
+
+
+
+    ; 2) Operaciones de Clipboard (D)
+    ; Como tal, estas operaciones no estan presentes en el codigo mas alla de una operacion de escritura al clipboard que no fue utilizada.
+    ; Sin embargo, las herramientas generales para su implementacion si estan presentes. Por ejemplo, la rutina BoundedTempCopy recrea
+    ; el archivo original en el temporal previo a la linea solicitada y las operaciones de insercion y sobrescritura sirven. La rutina
+    ; FindLineBound es una version mas sencilla que simplemente localiza la linea sin recrear el archivo entero y ademas alerta si existe
+    ; o no dicha linea, pues no tiene que expandir el archivo. La idea era tratar de obtener al menos la primera linea del rectangulo
+    ; a copiar. Si no existia dicha linea, se reportaria como error por no estar presente. De estar presente, se intentaria crear el cuadro
+    ; de seleccion a partir de las lineas restantes, siendo flexibles con el tamaño vertical (1 linea o mas, acotado por Linea2)
+    ; 
+    ; El analisis de las columnas tambien esta presente en funciones existentes que sirven. Para la insercion/sobrescritura se hizo
+    ; la rutina MoveSubstringCX para armar por pedazos la linea a escribir. Para el copy/cut habria sido una version mucho mas sencilla,
+    ; pues se tomaria el offset del buffer[columna1] hasta buffer[columna2] si el tamaño guardado en formato likePascal lo permitia.
+    ; Dicho substring luego se manda a escribir al clipboard como una linea individual.
+    ;
+    ; Para la operacion de cut si faltaria crear una rutina hibrida entre BoundedTempCopy y FindLineBound que recree el archivo hasta antes
+    ; de la linea solicitada SIN agregar lineas nuevas. En la misma creacion del substring para clipboard se trabajaria en el auxiliarBuffer
+    ; para crear la linea con recorte mientras que en mergeBuffer se coloca la linea recortada, luego se escriben a sus respectivos archivos.
+    ;
+    ; La operacion de pegar es de las más factibles con las herramientas presentes. Seria simplemente abrir tres archivos (original, temp, clipB)
+    ; Se copia el archivo con BoundedTempCopy hasta llegar a la posicion del paste. Luego, mientras existan lineas en clipB (osea mientras FindLineBound
+    ; retorne CF=1), se reutiliza la logica de InsertLine para tomar unalinea del copy y pegarla en la linea correspondiente. Asi sucesivamente se
+    ; crea el tempfile deseado y luego se termina de escribir con la rutina ya existente de FinishTempFile.
+
+
+
+    ; 3) Buscar y reemplazar (caracter)
+    ; De forma similar, se cuenta con las herramientas de manejo de linea necesarias para programar el algoritmo, pero no con el tiempo
+    ; para hacerlo. La idea era realizar una lectura linea por linea, similar a FindLineBound. En cada lectura se recorre el buffer
+    ; para buscar el char (muy probablemente con Repne Scasb). Al hallarlo, su posicion se reporta como un numero de columna y se
+    ; reutiliza la logica de InsertLine para obtener el reemplazo. Seria necesario un paso intermedio que elimine el char para que
+    ; no quede despues de la insercion si cabe el subtring derecho de la columna, como sucede normalmente en InsertLine. Sin embargo,
+    ; dicha operacion es casi inmediata del numero de columna. Seria desplazar con Movsb (Std) iterando con la cantidad restante
+    ; del mismo ciclo. Por ejemplo, char= T linea= abTde. Al hallar T (col= 2), se colapsa la linea a "abde"
 ;
 
 DataSegment segment
