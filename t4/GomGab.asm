@@ -34,8 +34,10 @@ DataSegment segment
         DOS_CLOSE_FILE  = 3Eh
         DOS_READ_FILE   = 3Fh
         DOS_WRITE_FILE  = 40h
+        DOS_ERASE_FILE  = 41h
         DOS_SET_FILEPTR = 42h
         DOS_EXIT        = 4Ch
+        DOS_RENAME_FILE = 56h
     ;
 
     ; File Functions
@@ -1100,8 +1102,10 @@ CodeSegment segment
     ;         [Dx] - Address of likePascalW buffer
     ; Outputs: Closes files and replaces the original one with the temp contents
     FinishTempFile proc
+        Push es
         Push ax
         Push bx
+        Push di
 
     ITER_FinishTempFile:
         Call ReadLine
@@ -1115,17 +1119,29 @@ CodeSegment segment
         Xor al, al
         Int 21h                 ; Close original file
 
+        Mov ah, DOS_ERASE_FILE
+        Xor al, al
+        Mov dx, offset filePath ; Delete original file
+        Int 21h
+
         Mov ah, DOS_CLOSE_FILE
         Xor al, al
         Mov bx, tempHandle
         Int 21h                 ; Close temp file
-        
-        ; TODO:
-        ; Reemplazar por logica que cierra y elimina archivo original
-        ; para reemplazarlo por tempfile
 
+        Xor al, al
+        Mov ah, DOS_RENAME_FILE
+        Mov dx, offset tempPath ; Set temp file as target
+
+        Push ds
+        Pop es
+        Mov di, offset filePath ; Set ES:DI as new name for target
+        Int 21h                 ; Request rename to finally replace file with edited version
+
+        Pop di
         Pop bx
         Pop ax
+        Pop es
         Ret
     FinishTempFile endP
 
@@ -1648,13 +1664,173 @@ CodeSegment segment
         Ret
     CapitalizationFormat endP
 
+    ; Encrypts a non-control character reference
+    ; Inputs: [SI] - Pointer to char
+    ;         [charBuffer] - Encryption key
+    ; Outputs: [SI] - Encrypted printable char
+    EncryptChar proc near
+        Push ax
+
+        Mov al, byte ptr ds:[si]
+        Cmp al, CHAR_SPACE
+        Jb END_EncryptChar  ; Avoid encrypting control chars
+
+        Add al, charBuffer  ; Apply key offset
+        Jc AUX_EncryptChar  ; If it exceeds byte capacity, apply offset to avoid using control chars
+        Jmp END_EncryptChar
+
+    AUX_EncryptChar:
+        Add al, CHAR_SPACE
+
+    END_EncryptChar:
+        Mov byte ptr ds:[si], al ; Store new char value
+        Pop ax
+        Ret
+    EncryptChar endP
+
+    ; Processes a request for an encrypt command. It performs error checking
+    ; for existing files
+    ; Inputs: [filePath] - Valid file name read from CL
+    ;         [coordinateA] - Line number
+    ; Outputs: Result of the operation
     EncryptWrapper proc
+        Push ax
+        Push bx
+        Push cx
+        Push dx
+        Push si
+
+        ; Attempt to open requested file
+        Mov ah, DOS_OPEN_FILE
+        Mov al, FILE_ACCESS_READ
+        Mov dx, offset filePath
+        Int 21h
+        Jc FLAG_EncryptWrapper  ; Flag error state if file can't be found
+        Mov targetHandle, ax    ; Save file handle for later use
+
+        Xor al, al
+        Mov ah, DOS_CREATE_FILE ; Create temporary work file
+        Mov cx, 00h             ; Set file attribute, and path
+        Mov dx, offset tempPath
+        Int 21h
+        Mov tempHandle, ax      ; Save handle for later use
+
+        Mov dx, offset sourceBuffer[word]  ; Set read buffer
+        Mov bx, targetHandle
+
+        Mov cx, coordinateA[0]  ; To iter until line is found
+        Call BoundedTempCopy    ; Find line contents and copy file up to its predecessors
+
+        Mov si, offset sourceBuffer ; Set line param to modify
+        Mov bx, offset EncryptChar  ; Set function to apply at each char
+        Call FormatLine             ; Obtain lowercase line
+
+        Mov bx, targetHandle ; Restore file handle before operating files
+        Call WriteLineToTemp
+
+        Call PrintResultPrompt
+        Call PrintLikePW ; SI already points to result buffer
+
+        Call FinishTempFile
+
+        Jmp HALT_EncryptWrapper
+
+    FLAG_EncryptWrapper:
+        Mov programState, ERROR_PATH_NOT_FOUND
+        Jmp END_EncryptWrapper
+    HALT_EncryptWrapper:
         Mov programState, STATE_HALT
+    END_EncryptWrapper:
+        Pop si
+        Pop dx
+        Pop cx
+        Pop bx
+        Pop ax
         Ret
     EncryptWrapper endP
 
+    ; Decrypts a non-control character reference
+    ; Inputs: [SI] - Pointer to char
+    ;         [charBuffer] - Decryption key
+    ; Outputs: [SI] - Decrypted printable char
+    DecryptChar proc near
+        Push ax
+
+        Mov al, byte ptr ds:[si]
+        Cmp al, CHAR_SPACE
+        Jb END_DecryptChar  ; Skip control chars
+
+        Sub al, charBuffer  ; Apply key offset
+        Jc AUX_DecryptChar  ; If it underflows, modulo is implicit. Apply offset
+        Jmp END_DecryptChar
+
+    AUX_DecryptChar:
+        Sub al, CHAR_SPACE
+
+    END_DecryptChar:
+        Mov byte ptr ds:[si], al ; Store new char value
+        Pop ax
+        Ret
+    DecryptChar endP
+
+    ; Processes a request for a decrypt command. It performs error checking
+    ; for existing files
+    ; Inputs: [filePath] - Valid file name read from CL
+    ;         [coordinateA] - Line number
+    ; Outputs: Result of the operation
     DecryptWrapper proc
+        Push ax
+        Push bx
+        Push cx
+        Push dx
+        Push si
+
+        ; Attempt to open requested file
+        Mov ah, DOS_OPEN_FILE
+        Mov al, FILE_ACCESS_READ
+        Mov dx, offset filePath
+        Int 21h
+        Jc FLAG_DecryptWrapper  ; Flag error state if file can't be found
+        Mov targetHandle, ax    ; Save file handle for later use
+
+        Xor al, al
+        Mov ah, DOS_CREATE_FILE ; Create temporary work file
+        Mov cx, 00h             ; Set file attribute, and path
+        Mov dx, offset tempPath
+        Int 21h
+        Mov tempHandle, ax      ; Save handle for later use
+
+        Mov dx, offset sourceBuffer[word]  ; Set read buffer
+        Mov bx, targetHandle
+
+        Mov cx, coordinateA[0]  ; To iter until line is found
+        Call BoundedTempCopy    ; Find line contents and copy file up to its predecessors
+
+        Mov si, offset sourceBuffer ; Set line param to modify
+        Mov bx, offset DecryptChar  ; Set function to apply at each char
+        Call FormatLine             ; Obtain lowercase line
+
+        Mov bx, targetHandle ; Restore file handle before operating files
+        Call WriteLineToTemp
+
+        Call PrintResultPrompt
+        Call PrintLikePW ; SI already points to result buffer
+
+        Call FinishTempFile
+
+        Jmp HALT_DecryptWrapper
+
+    FLAG_DecryptWrapper:
+        Mov programState, ERROR_PATH_NOT_FOUND
+        Jmp END_DecryptWrapper
+    HALT_DecryptWrapper:
         Mov programState, STATE_HALT
+    END_DecryptWrapper:
+        Pop si
+        Pop dx
+        Pop cx
+        Pop bx
+        Pop ax
         Ret
     DecryptWrapper endP
 
