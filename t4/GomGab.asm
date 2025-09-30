@@ -1592,6 +1592,62 @@ CodeSegment segment
         Ret
     FormatLine endP
 
+    ; Tests if a char reference is alphabetic (a-z only, no accents included)
+    ; Inputs: [SI] - Pointer to char
+    ; Outputs: CF - Set if alpha, clear if not alpha
+    IsAlpha proc
+        Push ax
+
+        Mov al, byte ptr ds:[si] ; Assume char is alpha and
+        Or al, 20h               ; enforce lowercase
+        ; See 41-5A = 0100X-0101X --<or>--> 61-7A = 0110X-0111X
+        Cmp al, 'a'
+        Jb FLAG_NotAlpha
+        Cmp al, 'z'
+        Ja FLAG_NotAlpha
+        Stc
+        Jmp END_IsAlpha
+    
+    FLAG_NotAlpha:
+        Clc
+    END_IsAlpha:
+        Pop ax
+        Ret
+    IsAlpha endP
+
+    ; Applies a Capitalization format to alpha substring in a line
+    ; Inputs:   [SI] - Address to line in likePascalW format
+    ; Outputs: [SI] - Updates line with function's format
+    CapitalizationFormat proc
+        Push cx
+        Push si
+
+        Mov cx, word ptr ds:[si] ; Retrieve line size
+        Inc si                   ; Adjust prior to buffer contents
+
+    ITER_CapFormatA: ; Find start of alpha substr
+        Jcxz END_CapitalizationFormat ; Halt if line is complete
+        Inc si                        ; Otherwise, read next byte
+        Dec cx                        ; Reduce pending count
+        Call IsAlpha
+        Jnc ITER_CapFormatA           ; Keep searching alpha substr
+        Call SetUpperCase             ; If found, set beginning in upper
+
+    ITER_CapFormatB: ; Find end of alpha substr
+        Jcxz END_CapitalizationFormat ; Halt if line is complete
+        Inc si                        ; Otherwise, read next byte
+        Dec cx                        ; Reduce pending count
+        Call IsAlpha
+        Jnc ITER_CapFormatA           ; End of substr, search for a new one
+        Call SetLowerCase             ; Enforce lowercase in substr
+        Jmp ITER_CapFormatB
+
+    END_CapitalizationFormat:
+        Pop si
+        Pop cx
+        Ret
+    CapitalizationFormat endP
+
     EncryptWrapper proc
         Mov programState, STATE_HALT
         Ret
@@ -1602,8 +1658,61 @@ CodeSegment segment
         Ret
     DecryptWrapper endP
 
+    ; Processes a request for a capitalized line command. It performs error checking
+    ; for existing files
+    ; Inputs: [filePath] - Valid file name read from CL
+    ;         [coordinateA] - Line number
+    ; Outputs: Result of the operation
     CapLineWrapper proc
+        Push ax
+        Push bx
+        Push cx
+        Push dx
+        Push si
+
+        ; Attempt to open requested file
+        Mov ah, DOS_OPEN_FILE
+        Mov al, FILE_ACCESS_READ
+        Mov dx, offset filePath
+        Int 21h
+        Jc FLAG_CapLineWrapper  ; Flag error state if file can't be found
+        Mov targetHandle, ax    ; Save file handle for later use
+
+        Xor al, al
+        Mov ah, DOS_CREATE_FILE ; Create temporary work file
+        Mov cx, 00h             ; Set file attribute, and path
+        Mov dx, offset tempPath
+        Int 21h
+        Mov tempHandle, ax      ; Save handle for later use
+
+        Mov dx, offset sourceBuffer[word]  ; Set read buffer
+        Mov bx, targetHandle
+
+        Mov cx, coordinateA[0]  ; To iter until line is found
+        Call BoundedTempCopy    ; Find line contents and copy file up to its predecessors
+
+        Mov si, offset sourceBuffer ; Set line param to modify
+        Call CapitalizationFormat
+        Call WriteLineToTemp
+
+        Call PrintResultPrompt
+        Call PrintLikePW ; SI already points to result buffer
+
+        Call FinishTempFile
+
+        Jmp HALT_CapLineWrapper
+
+    FLAG_CapLineWrapper:
+        Mov programState, ERROR_PATH_NOT_FOUND
+        Jmp END_CapLineWrapper
+    HALT_CapLineWrapper:
         Mov programState, STATE_HALT
+    END_CapLineWrapper:
+        Pop si
+        Pop dx
+        Pop cx
+        Pop bx
+        Pop ax
         Ret
     CapLineWrapper endP
 
