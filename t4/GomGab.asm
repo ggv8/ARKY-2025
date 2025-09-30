@@ -1173,10 +1173,9 @@ CodeSegment segment
     AvailableInsertionCX endP
 
     ; Aux to InsertLine: Attempts to include right substring after text insertion
-    ; Inputs:  [SI]          - Expects pointer to insertion line's byte count
-    ;          [mergeBuffer] - Assumes updated byte count for buffer within 0 to MAX_LINE_SIZE
+    ; Inputs:  [mergeBuffer] - Assumes updated byte count for buffer within 0 to MAX_LINE_SIZE
     ; Outputs: [mergeBuffer+word] - Updates buffer with right substring contents if possible
-    BestFitRightSubstring proc
+    BestFitInsertSubstr proc
         Push bx
         Cmp mergeBuffer, MAX_LINE_SIZE
         Je END_BestFitRightSubstring   ; If right substring can't fit, halt. Otherwise, include as many chars as possible
@@ -1197,12 +1196,46 @@ CodeSegment segment
     END_BestFitRightSubstring:
         Pop bx
         Ret
-    BestFitRightSubstring endP
+    BestFitInsertSubstr endP
+
+    ; Aux to OverwriteLine: Attempts to include right substring after text insertion accounting for its lost chars
+    ; Inputs:   AX - Count of bytes overwritten
+    ;          [mergeBuffer] - Assumes updated byte count for buffer within 0 to MAX_LINE_SIZE
+    ; Outputs: [mergeBuffer+word] - Updates buffer with right substring contents if possible
+    BestFitOverwriteSubstr proc
+        Push bx
+        Cmp mergeBuffer, MAX_LINE_SIZE
+        Je END_BestFitOverwriteSubstr   ; If right substring can't fit, halt. Otherwise, include as many chars as possible
+
+        Mov si, dx  ; Point to current line's size
+        Mov bx, dx
+        Inc bx
+        Inc bx      ; To point at buffer offset
+       
+        Sub word ptr ds:[si], cx  ; Original size - col = right substring size
+        Cmp ax, word ptr ds:[si]  ; If overwritten count consumed entire substring, halt
+        Jae END_BestFitOverwriteSubstr
+
+        Sub word ptr ds:[si], ax ; Otherwise, only account for non overwritten substr bytes
+
+        Add bx, cx                ; Base address  + col = start of substring
+        Add bx, ax                ; Substr address + overwritten count = start of non overwritten substr
+        Call AvailableInsertionCX ; Get counter for byte insertion
+
+        Xchg si, bx          ; Prep SI as substring param
+        Call MoveSubstringCX
+        Add mergeBuffer, cx  ; Update complete line's size field
+
+    END_BestFitOverwriteSubstr:
+        Pop bx
+        Ret
+    BestFitOverwriteSubstr endP
 
     ; Inserts a text line to the current line of a file
     ; Inputs: [Dx] - likePascalW variable with current line size and buffer
     ;         [Ax] - likePascalW variable with line to insert in buffer
     ;          Cx  - Column value to insert at
+    ; Outputs: [mergeBuffer] - Insertion result in likePascalW format
     InsertLine proc
         Push cx
         Push si
@@ -1225,12 +1258,12 @@ CodeSegment segment
 
         Inc si
         Inc si                  ; Point to insertion's buffer, CX and DI are already set
-        Call MoveSubstringCX    ; Insertion complete: Line + Whitespaces + Insertion best fit
+        Call MoveSubstringCX    ; Insertion partially complete: Line + Insertion + right substr??
         Add mergeBuffer, cx     ; Update size field to match buffer contents
         Add di, cx              ; Offset area for potential last write
         Pop cx
         
-        Call BestFitRightSubstring ; Try to include right subtring if capacity allows it
+        Call BestFitInsertSubstr ; Try to include right subtring if capacity allows it
         Jmp END_InsertLine
 
     AUX_InsertLine:
@@ -1259,6 +1292,71 @@ CodeSegment segment
         Pop cx
         Ret
     InsertLine endP
+
+    ; Inserts a text line to the current line of a file
+    ; Inputs: [Dx] - likePascalW variable with current line size and buffer
+    ;         [Ax] - likePascalW variable with line to insert in buffer
+    ;          Cx  - Column value to insert at
+    ; Outputs: [mergeBuffer] - Overwrite result in likePascalW format
+    OverwriteLine proc
+        Push ax
+        Push cx
+        Push si
+        Push di
+
+        Mov di, offset mergeBuffer[word] ; Work area to combine lines
+        Mov si, dx                       ; To access current line's buffer
+        Inc si
+        Inc si                        ; Point to buffer field
+        Cmp cx, word ptr ds:[si-word] ; If requested column is greater than available in line, extend line size
+        Ja AUX_OverwriteLine          ; Note: Col is restricted from 0 to 255, case 256=256 is impossible, requires no validation
+
+        Call MoveSubstringCX    ; Obtain current line's left substring in DI
+        Mov mergeBuffer, cx     ; Track remaining space for line overwrite
+        Add di, cx              ; Offset area to write after left substring
+
+        Push cx ; Save column value to later use
+        Mov si, ax                  ; Point to overwrite line's size
+        Call AvailableInsertionCX   ; Obtain count for MoveSubstring accounting for best fit insertion
+
+        Inc si
+        Inc si                        ; Point to overwrite's buffer, CX and DI are already set
+        Call MoveSubstringCX          ; Overwrite partially complete: Line + Insertion + right substr??
+        Add mergeBuffer, cx           ; Update size field to match buffer contents
+        Add di, cx                    ; Offset area for potential last write
+        Mov ax, cx                    ; Save overwrite count for upcoming best fit
+        Pop cx
+        
+        Call BestFitOverwriteSubstr ; Try to include right subtring if capacity allows it
+        Jmp END_OverwriteLine
+
+    AUX_OverwriteLine:
+        Mov mergeBuffer, cx      ; Update size ahead of time with column as target
+        Push cx
+        Mov cx, word ptr ds:[si-word] ; Prep to copy entire line to buffer, work area (DI) already set
+        Call MoveSubstringCX          ; Obtain line copy
+        Add di, cx                    ; Offset area to continue writing after line copy
+        Pop cx
+
+        Sub cx, word ptr ds:[si-word] ; Obtain count of spaces required to extend up to desired column
+        Call WriteSpacesCX       ; Write required spaces, work area's size = column = line size + whitespace count
+        Add di, cx               ; Offset in prep for next write operation
+
+        Mov si, ax                  ; Point to insertion line's size
+        Call AvailableInsertionCX   ; Obtain count for MoveSubstring accounting for best fit insertion
+
+        Inc si
+        Inc si                  ; Point to insertion's buffer, CX and DI are already set
+        Call MoveSubstringCX    ; Insertion complete: Line + Whitespaces + Insertion best fit
+        Add mergeBuffer, cx     ; Update size field to match buffer contents
+
+    END_OverwriteLine:
+        Pop di
+        Pop si
+        Pop cx
+        Pop ax
+        Ret
+    OverwriteLine endP
 
     ; Copies a file in the temp file until a line bound is found
     ; Inserts newlines if there aren't enough lines in the original
@@ -1382,7 +1480,60 @@ CodeSegment segment
     InsertWrapper endP
 
     OverwriteWrapper proc
+        Push ax
+        Push bx
+        Push cx
+        Push dx
+        Push si
+
+        ; Attempt to open requested file
+        Mov ah, DOS_OPEN_FILE
+        Mov al, FILE_ACCESS_READ
+        Mov dx, offset filePath
+        Int 21h
+        Jc FLAG_OverwriteNotFound  ; Flag error state if file can't be found
+        Mov targetHandle, ax    ; Save file handle for later use
+
+        Xor al, al
+        Mov ah, DOS_CREATE_FILE ; Create temporary work file
+        Mov cx, 00h             ; Set file attribute, and path
+        Mov dx, offset tempPath
+        Int 21h
+        Mov tempHandle, ax      ; Save handle for later use
+
+        Mov dx, offset sourceBuffer[word]  ; Set read buffer
+        Mov bx, targetHandle
+
+        Mov cx, coordinateA[0]  ; To iter until line is found
+        Call BoundedTempCopy    ; Find line contents and copy file up to its predecessors
+        
+        Mov cx, coordinateA[word]   ; To locate column in current line
+        Sub dx, word                ; Point buffer back to size field for upcoming routine
+        Mov ax, offset auxiliarBuffer ; Set likePW line to overwrite
+        Call OverwriteLine            ; Obtain result in mergeBuffer
+
+        Mov dx, offset mergeBuffer[word] ; Set result for write operation
+        Call WriteLineToTemp
+
+        Call PrintResultPrompt
+        Mov si, dx              ; Set filepath for printing
+        Call PrintLikeC
+
+        Call FinishTempFile
+
+        Jmp HALT_OverwriteWrapper
+
+    FLAG_OverwriteNotFound:
+        Mov programState, ERROR_PATH_NOT_FOUND
+        Jmp END_OverwriteWrapper
+    HALT_OverwriteWrapper:
         Mov programState, STATE_HALT
+    END_OverwriteWrapper:
+        Pop si
+        Pop dx
+        Pop cx
+        Pop bx
+        Pop ax
         Ret
     OverwriteWrapper endP
 
