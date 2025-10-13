@@ -22,6 +22,30 @@
     ; ╚══════════════════════════════════════════════════════════╩══════════════╝
 ;
 
+; Macros
+
+    ; Pushes a list of registers to the CPU stack in order
+    ; Inputs: R1~R12 : List of comma-separated registers
+    PUSHLIST Macro R1:REQ,R2,R3,R4,R5,R6,R7,R8,R9,R10,R11,R12
+        IRP item, <R1,R2,R3,R4,R5,R6,R7,R8,R9,R10,R11,R12>
+            IFB <item>
+                exitM ; Halt early if list is shorter than 12 regs
+            endIF
+            Push item
+        endM
+    endM
+
+    ; Pops a list of registers from the CPU stack in reverse order
+    ; Inputs: R1~R12 : List of comma-separated registers
+    POPLIST Macro R1:REQ,R2,R3,R4,R5,R6,R7,R8,R9,R10,R11,R12
+        IFNB <R2> ; General case: Recursive for lists larger than 1
+            POPLIST R2,R3,R4,R5,R6,R7,R8,R9,R10,R11,R12
+        EndIF
+        Pop R1
+    endM
+
+;
+
 DataSegment segment
 ; Symbolic Constants
 
@@ -29,7 +53,24 @@ DataSegment segment
         DOS_INPUT_CHAR  = 01h
         DOS_PRINT_CHAR  = 02h
         DOS_PRINT_STR   = 09h
+        DOS_CREATE_FILE = 3Ch
+        DOS_OPEN_FILE   = 3Dh
+        DOS_CLOSE_FILE  = 3Eh
+        DOS_READ_FILE   = 3Fh
+        DOS_WRITE_FILE  = 40h
+        DOS_ERASE_FILE  = 41h
+        DOS_SET_FILEPTR = 42h
         DOS_EXIT        = 4Ch
+        DOS_RENAME_FILE = 56h
+    ;
+
+    ; File Functions
+        FILE_ACCESS_READ  = 00h
+        FILE_ACCESS_WRITE = 01h
+        FILE_ACCESS_RW    = 02h
+        FILEPTR_SOF_POS   = 00h
+        FILEPTR_CUR_POS   = 01h
+        FILEPTR_EOF_POS   = 02h
     ;
 
     ; ASCII

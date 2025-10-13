@@ -22,6 +22,30 @@
     ; ╚══════════════════════════════════════════════════════════╩══════════════╝
 ;
 
+; Macros
+
+    ; Pushes a list of registers to the CPU stack in order
+    ; Inputs: R1~R12 : List of comma-separated registers
+    PUSHLIST Macro R1:REQ,R2,R3,R4,R5,R6,R7,R8,R9,R10,R11,R12
+        IRP item, <R1,R2,R3,R4,R5,R6,R7,R8,R9,R10,R11,R12>
+            IFB <item>
+                exitM ; Halt early if list is shorter than 12 regs
+            endIF
+            Push item
+        endM
+    endM
+
+    ; Pops a list of registers from the CPU stack in reverse order
+    ; Inputs: R1~R12 : List of comma-separated registers
+    POPLIST Macro R1:REQ,R2,R3,R4,R5,R6,R7,R8,R9,R10,R11,R12
+        IFNB <R2> ; General case: Recursive for lists larger than 1
+            POPLIST R2,R3,R4,R5,R6,R7,R8,R9,R10,R11,R12
+        EndIF
+        Pop R1
+    endM
+
+;
+
 DataSegment segment
 ; Symbolic Constants
 
@@ -40,6 +64,15 @@ DataSegment segment
         DOS_RENAME_FILE = 56h
     ;
 
+    ; File Functions
+        FILE_ACCESS_READ  = 00h
+        FILE_ACCESS_WRITE = 01h
+        FILE_ACCESS_RW    = 02h
+        FILEPTR_SOF_POS   = 00h
+        FILEPTR_CUR_POS   = 01h
+        FILEPTR_EOF_POS   = 02h
+    ;
+
     ; ASCII
         CHAR_NULL  = 00h
         CHAR_CR    = 0Dh
@@ -52,11 +85,12 @@ DataSegment segment
         STATE_HALT    = 0000h
         STATE_DEFAULT = 0001h
         STATE_HELP    = 0002h
-        STATE_FIRST_PANEL = 0003h
-        STATE_PLACE_PANEL = 0004h
-        STATE_FIRST_TURN  = 0005h
-        STATE_PLAY_TURN   = 0006h
-        STATE_GAME_OVER   = 0007h
+        STATE_RESTART = 0003h
+        STATE_FIRST_PANEL = 0004h
+        STATE_PLACE_PANEL = 0005h
+        STATE_FIRST_TURN  = 0006h
+        STATE_PLAY_TURN   = 0007h
+        STATE_GAME_OVER   = 0008h
         ; 8000h to FFFFh are reserved for errors, 8000h is a failsafe state
         STATE_ERROR   = 8000h ; Used as reference for comparisons
         ERROR_UNKNOWN_CMD    = 8001h
@@ -140,12 +174,17 @@ DataSegment segment
     errorPanelBlocked  db "La posicion comparte panel con la ultima esfera del oponente", CHAR_NULL
     errorVoidPosition  db "La posicion dada se sale del tablero de juego creado", CHAR_NULL
     errorFileCorrupt   db "El archivo de la partida esta corrupto o fue renombrado", CHAR_NULL
+
+    fileRestartPrompt db "Esta seguro de que quiere reiniciar la partida? (s/n): ", CHAR_NULL
+    fileRestartHalt   db "Se ha cancelado la operacion de reinicio", CHAR_NULL
+    fileRestartDone   db "Se ha reiniciado el archivo de la partida", CHAR_NULL
 ;
 
 ; Look-up Tables
     stateTable  dw STATE_DEFAULT,       StartWrapper
     STATE_OFFSET = ($ - stateTable)
                 dw STATE_HELP,          PrintHelp
+                dw STATE_RESTART,       FileRestartWrapper
                 dw STATE_FIRST_PANEL,   ExampleRoutine
                 dw STATE_PLACE_PANEL,   ExampleRoutine
                 dw STATE_FIRST_TURN,    ExampleRoutine
@@ -347,14 +386,171 @@ CodeSegment segment
         Ret
     ReadInput endP
 
+    ; Writes a new game file using the current game data
+    ; Inputs: n/a
+    ; Outpus: Writes relevant game variables in a single binary file
+    WriteGameFile proc
+        PUSHLIST ax, bx, cx, dx
+        
+        Mov dx, offset gamefilePath ; Set ASCIIZ for file op
+        Xor al, al
+        Mov ah, DOS_CREATE_FILE ; Attempt to create file
+        Mov cx, 00h             ; Set file attributes
+        Int 21h
+        Jnc WRITE_WriteGameFile   ; If successful, write default contents
+
+        Call PrintAX ; Otherwise, print error code
+        Jmp END_WriteGameFile
+    
+    WRITE_WriteGameFile:
+        Mov bx, ax                  ; Set file handle
+        Mov cx, DISK_BUFFER_SIZE    ; To write byte count from
+        Mov dx, offset programState ; programState up to boardGrid
+        Xor al, al
+        Mov ah, DOS_WRITE_FILE
+        Int 21h                     ; Request file operation
+        Jnc CLOSE_WriteGameFile     ; Close file if succesful
+
+        Call PrintAX    ; Otherwise, print error code before closing file
+        ; Note to self: Ideally there should be error checking for AX < CX
+        ; for succesful writes to inform insufficient disk space (TODO???)
+
+    CLOSE_WriteGameFile:
+        Xor al, al
+        Mov ah, DOS_CLOSE_FILE
+        Int 21h                 ; Request file closure
+    END_WriteGameFile:
+        POPLIST ax, bx, cx, dx
+        Ret
+    WriteGameFile endP
+
+    ; Retrieves game data from its file and stores it in memory
+    ; Inputs: Assumes file has been confirmed to be present in directory
+    ; Outputs: Stores contents from file in programState, turnCounter
+    ;          tokenCounters, panelCounters, panelArrayList, arrayListSize,
+    ;          previousTurn, and boardGrid
+    ;          Otherwise, it creates a new file with their default variables
+    LoadGameFile proc
+        PUSHLIST ax, bx, cx, dx
+
+        Mov dx, offset gamefilePath
+        Mov ah, DOS_OPEN_FILE
+        Mov al, FILE_ACCESS_READ ; Set access mode
+        Int 21h                  ; Attempt to locate file
+        Jnc READ_LoadGameFile    ; If successful, read contents
+
+        ; Otherwise, create a new default game file
+        Mov programState, STATE_FIRST_PANEL ; Restart game state
+        Call WriteGameFile                  ; Write defaults to file
+        Jmp END_LoadGameFile                ; Skip redundant loading
+        
+    READ_LoadGameFile:
+        Mov bx, ax                  ; Set opened file handle
+        Mov cx, DISK_BUFFER_SIZE    ; Read byte count from
+        Mov dx, offset programState ; programState up to boardGrid
+        Xor al, al
+        Mov ah, DOS_READ_FILE
+        Int 21h                     ; Request file operation
+        Jnc AUX_LoadGameFile        ; Check read byte count if successful
+
+        Call PrintAX ; Otherwise, print error code before closing file
+        Call PrintCRLF
+        Jmp CLOSE_LoadGameFile
+    
+    AUX_LoadGameFile:
+        ; TODO: Check if read byte count < requested count in CX, potential corrupt file indicator
+    CLOSE_LoadGameFile:
+        Mov ah, DOS_CLOSE_FILE
+        Xor al, al
+        Int 21h                 ; Request file closure, CF = 0 (file present)
+    END_LoadGameFile:
+        POPLIST ax, bx, cx, dx
+        Ret
+    LoadGameFile endP
+
     ; Prints AboutMe and validates user inputs
     ; Inputs: Expects a valid command line input
     ; Output: Sends AboutMe to standard output
     StartWrapper proc
+        Call LoadGameFile ; Initializes game data
         Call PrintAboutMe
         Call ReadInput
         Ret
     StartWrapper endP
+
+    ; Restores all game variables to their default values
+    ; Inputs: n/a
+    ; Outputs: n/a
+    ClearData proc
+        PUSHLIST bx, cx
+        Mov programState, STATE_FIRST_PANEL
+        Mov turnCounter, PLAYER_RED_TURN
+        Mov tokenCounters[0],    TOTAL_TOKENS
+        Mov tokenCounters[byte], TOTAL_TOKENS
+        Mov word ptr panelCounters[0],    0
+        Mov word ptr panelCounters[word], 0
+        Mov word ptr previousTurn[0],     0
+        Mov word ptr previousTurn[word],  0
+    
+        Xor ch, ch
+        Mov cl, arrayListSize
+        Jcxz AUX_ClearData ; Skip if list was already empty (e.g Restart request after a restart request)
+        
+        Xor bx, bx
+        Mov arrayListSize, 0
+    ITER_ClearPanelList:
+        Mov word ptr panelArrayList[bx], 0
+        Inc bx
+        Inc bx
+        Loop ITER_ClearPanelList
+    
+    AUX_ClearData:
+        Xor bx, bx
+        Mov cx, (MATRIX_SIZE*MATRIX_SIZE)
+    ITER_ClearBoard:
+        Mov word ptr boardGrid[bx], 0
+        Mov word ptr boardGrid[bx+word], 0
+        Add bx, dword
+        Loop ITER_ClearBoard
+
+        POPLIST bx, cx
+        Ret
+    ClearData endP
+
+    ; Asks for user input to confirm a file restart operation
+    ; Inputs: Expects key entry from the standard input
+    ; Outputs: Describes the result of the operation to the standard output
+    FileRestartWrapper proc
+        PUSHLIST ax, si
+
+        Mov si, offset fileRestartPrompt
+        Call PrintLikeC
+        Mov ah, DOS_INPUT_CHAR
+    ITER_FileRestartWrapper:
+        Int 21h                    ; Request confirmation
+        Cmp al, 's'
+        Je AUX_FileRestartWrapper   ; Continue if yes
+        Cmp al, 'n'
+        Jne ITER_FileRestartWrapper  ; Iter until valid input
+        Jmp CANCEL_FileRestartWrapper ; Halt if no
+    
+    AUX_FileRestartWrapper:
+        Call PrintCRLF
+        Call ClearData
+        Call WriteGameFile
+        Mov si, offset fileRestartDone
+        Call PrintLikeC
+        Jmp END_FileRestartWrapper
+        
+    CANCEL_FileRestartWrapper:
+        Call PrintCRLF
+        Mov si, offset fileRestartHalt
+        Call PrintLikeC
+
+    END_FileRestartWrapper:
+        POPLIST ax, si
+        Ret
+    FileRestartWrapper endP
 
     ; Routine for example state
     ; Inputs: ...
@@ -528,6 +724,11 @@ CodeSegment segment
 
         Mov ax, DataSegment
         Mov ds, ax ; Set data's address
+
+
+        Call LoadGameFile
+        Call FileRestartWrapper
+        Jmp exit
 
     ITER_main:
         Cmp programState, STATE_HALT
