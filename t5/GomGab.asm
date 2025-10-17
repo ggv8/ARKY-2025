@@ -44,6 +44,12 @@
         Pop R1
     endM
 
+    ; Increases a register with a word-sized step
+    ; Inputs: R - Register to increase
+    INCW Macro R:REQ
+        Inc R
+        Inc R
+    endM
 ;
 
 DataSegment segment
@@ -86,11 +92,12 @@ DataSegment segment
         STATE_DEFAULT = 0001h
         STATE_HELP    = 0002h
         STATE_RESTART = 0003h
-        STATE_FIRST_PANEL = 0004h
-        STATE_PLACE_PANEL = 0005h
-        STATE_FIRST_TURN  = 0006h
-        STATE_PLAY_TURN   = 0007h
-        STATE_GAME_OVER   = 0008h
+        STATE_DISPLAY = 0004h
+        STATE_FIRST_PANEL = 0005h
+        STATE_PLACE_PANEL = 0006h
+        STATE_FIRST_TURN  = 0007h
+        STATE_PLAY_TURN   = 0008h
+        STATE_GAME_OVER   = 0009h
         ; 8000h to FFFFh are reserved for errors, 8000h is a failsafe state
         STATE_ERROR   = 8000h ; Used as reference for comparisons
         ERROR_UNKNOWN_CMD    = 8001h
@@ -136,9 +143,19 @@ DataSegment segment
         PANEL_LINE_3_ID     = '3'
         PANEL_SQUARE_ID     = '4'
         PANEL_RECT_6_ID     = '6'
+
+        PANEL_VERTICAL      = 'V'
+        PANEL_HORIZONTAL    = 'H'
+
+        PANEL_LINE_2_OFFSET = 0201h ; Row:Col offsets are vertical by default
+        PANEL_LINE_3_OFFSET = 0301h
+        PANEL_SQUARE_OFFSET = 0202h
+        PANEL_RECT_6_OFFSET = 0302h
+
         PANEL_SHAPE_LIMIT   = 4
         PANEL_SQUARE_LIMIT  = 5
         TOTAL_PANELS        = 17
+        VOID_PANEL          = 0
     ;
 
     ; Misc
@@ -147,7 +164,7 @@ DataSegment segment
 ;
 
 ; String literals
-    aboutMe db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. 09/Oct/2025", CHAR_CR, CHAR_LF
+    aboutMe db "ITCR: Escuela de Computacion - Arquitectura de Computadoras. 17/Oct/2025", CHAR_CR, CHAR_LF
             db "Tarea Kulami | Autor: Gabriel Gomez Vega, 2021106483", CHAR_NULL
     helpMe  db "Debe ingresar los siguientes datos:", CHAR_CR, CHAR_LF
             db CHAR_HTAB, "Crear partida   (",CMD_NEW_GAME, ")", CHAR_CR, CHAR_LF
@@ -185,6 +202,7 @@ DataSegment segment
     STATE_OFFSET = ($ - stateTable)
                 dw STATE_HELP,          PrintHelp
                 dw STATE_RESTART,       FileRestartWrapper
+                dw STATE_DISPLAY,       ExampleRoutine
                 dw STATE_FIRST_PANEL,   ExampleRoutine
                 dw STATE_PLACE_PANEL,   ExampleRoutine
                 dw STATE_FIRST_TURN,    ExampleRoutine
@@ -207,6 +225,12 @@ DataSegment segment
 
     tokenData   db GAME_RED_TOKEN, GAME_RED_SENTINEL        ; Word array[2]
                 db GAME_BLACK_TOKEN, GAME_BLACK_SENTINEL
+    
+    commandParam   db (?)
+    panelParam     db (?)
+    directionParam db (?)
+    rowParam       db (?)
+    colParam       db (?)
 
     ; Upcoming data variables are stored and recovered from disk
     programState   dw STATE_DEFAULT
@@ -216,7 +240,7 @@ DataSegment segment
     panelArrayList dw TOTAL_PANELS dup(0)
     arrayListSize  db 0
     previousTurn   dw 2 dup(0)
-    boardGrid      dd MATRIX_SIZE dup(MATRIX_SIZE dup(0))
+    boardGrid      dd MATRIX_SIZE dup(MATRIX_SIZE dup(VOID_PANEL))
     DISK_BUFFER_SIZE = ($ - programState)
 
 DataSegment endS
@@ -360,27 +384,197 @@ CodeSegment segment
         Ret
     PrintError endP
 
+    ; Reads a command line parameter for a command code
+    ; Inputs: [BX] - Expects pointer to the parameter char in the command tail
+    ; Outputs: [commandParam]   - Saves the input in byte sized buffer
+    ;          [programState] - May set an error state if invalid
+    ;           CF            - Set if input parsing must halt early (due to error or no params required)
+    ReadCommandParam proc
+        Mov al, byte ptr es:[PSP_INPUT_OFFSET + bx]
+        And al, 11011111b                           ; Enforce upper case to allow leniency
+        Mov commandParam, al    ; Save command input for later use
+
+        Cmp al, CMD_NEW_GAME
+        Jne TEST_IsOverrideCmd  ; Check if command can override state
+
+        Mov programState, STATE_RESTART ; Override game state to handle restart request
+        Jmp FLAG_HaltEarly
+
+    TEST_IsOverrideCmd:
+        Cmp al, CMD_DISPLAY_GAME
+        Jne AUX_ReadCommandParam   ; If not a display request, avoid override and check remaining options
+        
+        Mov programState, STATE_DISPLAY ; Override state to handle display request
+        Jmp FLAG_HaltEarly
+
+    AUX_ReadCommandParam:
+        Cmp al, CMD_PLAY_TURN
+        Je FLAG_RequiresParams ; Known parametrized command, flag accordingly
+        Cmp al, CMD_ADD_PANEL
+        Jne FLAG_UnknownCmd    ; Flag error if command is unknown, otherwise proceed to parametrized flag
+
+    FLAG_RequiresParams:
+        Clc
+        Jmp END_ReadCommandParam
+
+    FLAG_UnknownCmd:
+        Mov programState, ERROR_UNKNOWN_CMD
+    FLAG_HaltEarly:
+        Stc
+    END_ReadCommandParam:
+        Ret
+    ReadCommandParam endP
+
+    ; Reads a command line parameter for a panel code
+    ; Inputs: [BX] - Expects pointer to the parameter char in the command tail
+    ; Outputs: [panelParam]   - Saves the input in byte sized buffer
+    ;          [programState] - May set an error state if invalid
+    ;           CF            - Set if an error state was flagged
+    ReadPanelParam proc
+        Mov al, byte ptr es:[PSP_INPUT_OFFSET + bx] ; Get panel param code
+        Mov panelParam, al                          ; Assume valid and store it
+
+        Cmp al, PANEL_LINE_2_ID ; Compare param with each known code
+        Je FLAG_ValidPanel
+        Cmp al, PANEL_LINE_3_ID
+        Je FLAG_ValidPanel
+        Cmp al, PANEL_SQUARE_ID
+        Je FLAG_ValidPanel
+        Cmp al, PANEL_RECT_6_ID
+        Je FLAG_ValidPanel
+
+        Mov programState, ERROR_UNKNOWN_PANEL ; Flag error if input is unrecognized
+        Stc
+        Jmp END_ReadPanelParam
+    FLAG_ValidPanel:
+        Clc
+    END_ReadPanelParam:
+        Ret
+    ReadPanelParam endP
+
+    ; Reads a command line parameter for a panel's orientation
+    ; Inputs: [BX] - Expects pointer to the parameter char in the command tail
+    ; Outputs: [directionParam] - Saves the input in byte sized buffer
+    ;          [programState]   - May set an error state if invalid
+    ;           CF              - Set if an error state was flagged
+    ReadDirectionParam proc
+        Mov al, byte ptr es:[PSP_INPUT_OFFSET + bx] ; Get param code
+        And al, 11011111b                           ; Enforce upper case to allow leniency
+        Mov directionParam, al                      ; Assume valid and store it
+
+        Cmp al, PANEL_VERTICAL
+        Je FLAG_ValidDirection
+        Cmp al, PANEL_HORIZONTAL
+        Je FLAG_ValidDirection
+
+        Mov programState, ERROR_ORIENTATION ; Flag error if code is invalid
+        Stc
+        Jmp END_ReadDirectionParam
+
+    FLAG_ValidDirection:
+        Clc 
+    END_ReadDirectionParam:
+        Ret
+    ReadDirectionParam endP
+
+    ; Reads a command line parameter for a digit
+    ; Inputs:  [BX]    - Expects pointer to the parameter char in the command tail
+    ;          DS:[DI] - Address of byte sized buffer
+    ; Outputs: DS:[DI]          - Saves the input at specified address
+    ;          [programState]   - May set an error state if invalid
+    ;           CF              - Set if an error state was flagged
+    ReadDigitParam proc
+        Mov al, byte ptr es:[PSP_INPUT_OFFSET + bx] ; Get param char
+
+        Xor al, 30h  ; Bit mask to obtain int val from char
+        Cmp al, 0Ah
+        Jb FLAG_ValidDigit ; Valid if within 0 to 9
+
+        Mov programState, ERROR_NON_INTEGER
+        Stc
+        Jmp END_ReadDigitParam
+
+    FLAG_ValidDigit:
+        Mov byte ptr ds:[di], al
+        Clc
+    END_ReadDigitParam:
+        Ret
+    ReadDigitParam endP
+
+    ; Reads a command line parameter for a board position
+    ; Inputs:  [BX] - Expects pointer to the previous parameter in the command tail
+    ; Outputs: [rowParam] and [colParam] - Saves the inpust in byte sized buffers
+    ;          [programState]            - May set an error state if invalid
+    ReadPositionParam proc
+        Push di
+
+        INCW bx
+        Cmp bx, cx
+        Ja FLAG_MissingPosition  ; Halt if input is over before required param
+        Mov di, offset rowParam
+        Call ReadDigitParam
+        Jc END_ReadPositionParam ; Halt if input is not a decimal digit
+
+        INCW bx
+        Cmp bx, cx
+        Ja FLAG_MissingPosition
+        Mov di, offset colParam
+        Call ReadDigitParam
+        Jmp END_ReadPositionParam ; Skip further error flagging, implicit in prev call
+
+    FLAG_MissingPosition:
+        Mov programState, ERROR_MISSING_INPUT
+    
+    END_ReadPositionParam:
+        Pop di
+        Ret
+    ReadPositionParam endP
+
     ; Reads the command line's input and stores parameters if present
-    ; Inputs: Expects ...
+    ; Inputs: Expects a command code, and some parameters depending on it
     ; Outputs: Stores values in data variables, and flags errors if necessary
     ReadInput proc
         Push ax
         Push bx
+        Push cx
 
-        Mov bx, PSP_INPUT_OFFSET
-        Cmp byte ptr es:[bx], 0    ; Is there an input?
+        Xor bx, bx
+        Xor ch, ch 
+        Mov cl, byte ptr es:[PSP_INPUT_OFFSET]
+        Cmp cl, 0                  ; Is there an input?
         Je FLAG_NoInput            ; If not, set new state, and halt proc
 
-        ; If there is, retrieve values only
-        Inc bx ; Point to input-preceding whitespace
-        Inc bx ; Point to first char
+        ; If there is, analize parameters required
+        INCW bx ; Skip input-preceding whitespace, and point to first char
+        Call ReadCommandParam
+        Jc END_ReadInput        ; Halt early if cmd does not require params or for flagged error
+
+        Cmp commandParam, CMD_PLAY_TURN
+        Je AUX_ReadInput                ; Only parse position for play commands
+
+        INCW bx
+        Cmp bx, cx
+        Ja FLAG_MissingInput ; Halt if input is over before required param
+        Call ReadPanelParam
+        Jc END_ReadInput     ; Halt if input is unknown
+
+        INCW bx
+        Cmp bx, cx
+        Ja FLAG_MissingInput
+        Call ReadDirectionParam
+        Jc END_ReadInput        ; Halt if invalid
         
-        ; Insert detailed logic here
+    AUX_ReadInput:
+        Call ReadPositionParam
 
         Jmp END_ReadInput  ; Skip error flagging line
+    FLAG_MissingInput:
+        Mov programState, ERROR_MISSING_INPUT
+        Jmp END_ReadInput
     FLAG_NoInput:
         Mov programState, STATE_HELP
     END_ReadInput:
+        Pop cx
         Pop bx
         Pop ax
         Ret
@@ -548,14 +742,191 @@ CodeSegment segment
         Call PrintLikeC
 
     END_FileRestartWrapper:
+        Mov programState, STATE_HALT
         POPLIST ax, si
         Ret
     FileRestartWrapper endP
+
+    ; Obtains a board address to use as pivot for panel data
+    ; Inputs:  CH:CL - Row and column, assumed within 0-9
+    ; Outputs: [SI]  - Offset to row and column inside board matrix
+    GetPivotOffsetSI proc
+        Push ax
+
+        Mov ax, MATRIX_SIZE*dword ; Row size for calculation
+        Mul ch
+        Mov si, ax  ; Save offset to row
+
+        Mov ax, dword ; Col size
+        Mul cl
+        Add si, ax  ; Apply offset to column within row
+
+        Pop ax
+        Ret
+    GetPivotOffsetSI endP
+
+    ; Writes each data column of a panel's row. Auxiliar to CreatePanel
+    ; Inputs: [SI] - Starting address within a row of the boardGrid
+    ;         CL   - Columns to write
+    ; Outputs: [programState]   - May set an error state if panel can't be created
+    ;          CF - Set if an error was flagged
+    WritePanelRow proc
+        Push si
+        Push cx
+    
+    ITER_WritePanelRow:
+        Mov bx, word ptr boardGrid[si]
+        Cmp bx, VOID_PANEL
+        Jne FLAG_PanelOverlap ; If another panel already exists, flag placement collision
+
+        Mov word ptr boardGrid[si],      ax ; Store panel identifier and content buffer first
+        Mov word ptr boardGrid[si+word], dx ; Then store DH:DL as pivot coord, and offset to lower corner
+        Add si, dword                       ; Point to next column
+        Dec cl                              ; Discard processed column from count
+        Jnz ITER_WritePanelRow
+
+        Clc
+        Jmp END_WritePanelRow
+
+    FLAG_PanelOverlap:
+        Mov programState, ERROR_PANEL_OVERLAP
+        Stc
+
+    END_WritePanelRow:
+        Pop cx
+        Pop si
+        Ret
+    WritePanelRow endP
+
+    ; Writes panel data inside the board from a pivot location, and enlists it
+    ; Inputs:   CH:CL - Row and colum, assumes values within 0-9
+    ;           DH:DL - Row count and column count
+    ;           AH:AL - Panel code, and id
+    ; Outputs: [programState]   - May set an error state if panel can't be created
+    ;          [panelArrayList] - Enlists panel data if operation is valid
+    ;          [arrayListSize]  - Updates list size
+    ;           AH:AL           - Compressed panel identifier : Panel Content
+    CreatePanel proc
+        PUSHLIST si, bx, cx, dx
+
+        Call GetPivotOffsetSI
+        Mov bx, cx              ; Copy upper corner data to calc lower corner
+        Add bh, dh
+        Add bl, dl              ; Add counts to check lower corner
+        Cmp bh, MATRIX_SIZE
+        Jae FLAG_PanelOverflow
+        Cmp bl, MATRIX_SIZE
+        Jae FLAG_PanelOverflow  ; Flag if panel placement extends beyond valid range
+
+        Xchg cx, dx ; If valid placement range, set counts in CH:CL for upcoming loops
+
+        Shl dh, 4   ; Set pivot corner's row as high nibble
+        Add dh, dl  ; Compress pivot corner as DH = row:col
+        Mov dl, ch  ; Obtain row count copy
+        Shl dl, 4   ; Set as high nibble
+        Add dl, cl  ; Compress offset from corner as DL = row:col counts
+        Shl ah, 4   ; Set panel code as upper nibble
+        Add ah, al
+        Xor al, al  ; Compress AH = PanelCode:ID, and AL = Panel Contents (empty default)
+
+    ITER_CreatePanelRow:
+        Call WritePanelRow
+        Jc END_IsPanelDifferent   ; Halt if an error was flagged
+        Add si, MATRIX_SIZE*dword ; Jump to next row
+        Dec ch                    ; Discard processed row from count
+        Jnz ITER_CreatePanelRow
+
+        Mov si, word ptr arrayListSize ; Retrieve list size (byte capacity)
+        And si, 00FFh                  ; Clear unrelated upper byte data
+        Shl si, byte                   ; Adjust index for word-sized item addressing
+
+        Mov byte ptr panelArrayList[si],      ah ; Enlist panel identifier
+        Mov byte ptr panelArrayList[si+byte], dh ; and its location
+        Inc arrayListSize                        ; Update item counter
+
+        Jmp END_CreatePanel ; Halt without error state
+
+    FLAG_PanelOverflow:
+        Mov programState, ERROR_PANEL_OVERFLOW
+    
+    END_CreatePanel:
+        POPLIST si, bx, cx, dx
+        Ret
+    CreatePanel endP
+
+    ; Determines if another panel unit belongs to a different identifier
+    ; Inputs:   AH - Panel identifier from current panel
+    ;           BH - Assumed panel identifier from another panel
+    ; Outputs: CF - Set if both panels are different, cleared if the target is void or the same panel
+    IsPanelDifferent proc
+        Cmp bh, VOID_PANEL
+        Je FLAG_NotDifferent ; Flag not different if the assumed panel is a void area
+        Cmp bh, ah
+        Je FLAG_NotDifferent ; Jump if both area units belong to the same panel identifier
+        Stc
+        Jmp END_IsPanelDifferent ; Otherwise, flag for different parent identifiers and halt
+    
+    FLAG_NotDifferent:
+        Clc
+    END_IsPanelDifferent:
+        Ret
+    IsPanelDifferent endP
+
+    ; Checks if the a panel's surrounding area is void
+    ; Inputs: CH:CL - Row and colum of panel's pivot
+    ;         DH:DL - Row count and column count
+    ;         AH    - Compressed panel identifier
+    ; Outputs: CF - Set if panel is alone, cleared if surrounded
+    IsLonePanel proc
+        PUSHLIST si, ax, bx, cx
+
+        Call GetPivotOffsetSI
+        Xchg cx, dx             ; Set counters in CX for loops
+    ITER_LonePanelRow:
+        PUSHLIST si, cx
+    ITER_LonePanelCol:
+        Mov bx, word ptr boardGrid[si - MATRIX_SIZE*dword] ; Check area unit from above
+        Call IsPanelDifferent
+        Jc FLAG_PanelSurrounded    ; Halt if another panel structure is adjacent, flag is already set
+
+        Mov bx, word ptr boardGrid[si + MATRIX_SIZE*dword] ; Check area unit from below
+        Call IsPanelDifferent
+        Jc FLAG_PanelSurrounded
+
+        Mov bx, word ptr boardGrid[si - dword]  ; Check area unit to its left
+        Call IsPanelDifferent
+        Jc FLAG_PanelSurrounded
+
+        Mov bx, word ptr boardGrid[si + dword]  ; Check area unit to its right
+        Call IsPanelDifferent
+        Jc FLAG_PanelSurrounded
+        
+        Add si, dword ; Jmp to next column
+        Dec cl        ; Discard processed col from count
+        Jnz ITER_LonePanelCol
+
+        POPLIST si, cx
+        Add si, MATRIX_SIZE*dword ; Jump to next row
+        Dec ch                    ; Discard processed row
+        Jnz ITER_LonePanelRow
+
+        Stc ; Set to denote no adjacent panel structure different from itself exists
+        Jmp END_IsLonePanel
+    
+    FLAG_PanelSurrounded:
+        POPLIST si, cx ; Resolve pending stack clean up from iter
+        Clc            ; Clear to denote condition as false
+
+    END_IsLonePanel:
+        POPLIST si, ax, bx, cx
+        Ret
+    IsLonePanel endP
 
     ; Routine for example state
     ; Inputs: ...
     ; Outputs: Sets programState to halt if no error occured
     ExampleRoutine proc
+        Mov ax, programState
         Call PrintAX
         Call PrintCRLF
         Mov programState, STATE_HALT
@@ -726,9 +1097,21 @@ CodeSegment segment
         Mov ds, ax ; Set data's address
 
 
-        Call LoadGameFile
-        Call FileRestartWrapper
-        Jmp exit
+        ;Mov cx, 0503h
+        ;Mov dx, PANEL_RECT_6_OFFSET
+        ;Mov ax, 4141h
+        ;Call CreatePanel
+
+        ;Mov cx, 0501h
+        ;Mov dx, PANEL_LINE_3_OFFSET
+        ;Mov ax, 4242h
+        ;Call CreatePanel
+        ;Call IsLonePanel
+
+        ;Call WriteGameFile
+        ;Call LoadGameFile
+        ;Call FileRestartWrapper
+        ;Jmp exit
 
     ITER_main:
         Cmp programState, STATE_HALT
