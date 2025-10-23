@@ -2,24 +2,91 @@
     ; ╔═════════════════════════════════════╦═══════════════════════════════════╗
     ; ║ Instituto Tecnologico de Costa Rica ║ Gabriel Gomez Vega                ║
     ; ║ Escuela de Computacion              ║ 2021106483                        ║
-    ; ║ Arquitectura de Computadoras        ║ 9 de Octubre del 2025             ║
+    ; ║ Arquitectura de Computadoras        ║ 17 de Octubre del 2025            ║
     ; ╚═════════════════════════════════════╩═══════════════════════════════════╝
     ; ╔═════════════════════════════════════════════════════════════════════════╗
     ; ║                            Manual de Usuario                            ║
     ; ╠═════════════════════════════════════════════════════════════════════════╣
-    ; ║                                                                         ║
+    ; Este es un prototipo del juego de mesa Kulami
+    ; Presenta funcionalidad para crear un juego nuevo (o borrar uno existente)
+    ; Para ver una representacion del tablero
+    ; Y para crear el tablero pieza a pieza
+    ; El programa acepta 4 comandos de entrada. No es case sensitive para facilitar
+    ; su uso
+    ; Los comandos N y K, crear partida y desplegar tablero, no ocupan parametros
+    ; e ignoran cualquier entrada adicional
+    ; El comando de panel espera un identificador de la pieza (2,3,4,6)
+    ; la orientacion H o V
+    ; y la posicion fila y columna
+    ; La funcionalidad de juego no esta implementada :(
+    ; Sin embargo, el programa si valida la creacion del tablero hasta su completitud
     ; ╚═════════════════════════════════════════════════════════════════════════╝
     ; ╔═════════════════════════════════════════════════════════════════════════╗
     ; ║                        Analisis de Resultados                           ║
     ; ╠══════════════════════════════════════════════════════════╦══════════════╣
     ; ║                          Aspectos                        ║ Calificacion ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Documentacion                                            ║      A       ║
+    ; ║ Documentacion                                            ║      B       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Documentacion                                            ║      A       ║
+    ; ║ Despliegue de la Ayuda                                   ║      A       ║
     ; ╠══════════════════════════════════════════════════════════╬══════════════╣
-    ; ║ Documentacion                                            ║      A       ║
+    ; ║ Lectura de la linea de comandos                          ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Restricciones de la entrada                              ║      B       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Manejo de errores                                        ║      B       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Creacion de archivos / partida nueva                     ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Insercion de paneles                                     ║      A       ║
+    ; ╠══════════════════════════════════════════════════════════╬══════════════╣
+    ; ║ Despliegue del tablero                                   ║      D       ║
     ; ╚══════════════════════════════════════════════════════════╩══════════════╝
+    ; ║ Juego (colocar piezas, turnos, reglas)                   ║      D       ║
+    ; ╚══════════════════════════════════════════════════════════╩══════════════╝
+
+    ; Explicacion adicional
+    ;
+    ; Respecto a la documentacion, este no cuenta con el nivel usual de detalle
+    ; que acostumbro para las rutinas debido a falta de tiempo y, en particular
+    ; con el despliegue del tablero, a que eran versiones experimentales. Por lo
+    ; tanto, estas rutinas tienen documentacion escasa y un codigo algo obtuso.
+    ; 
+    ; Las restricciones de la entrada por linea de comandos son validadas con
+    ; exito en lo que respecta a valores validos. No se hace una revision minuciosa,
+    ; se espera que los espacios vengan bien por ejemplo. Sin embargo, si se verifica
+    ; que se ingresen todos los parametros. Lo califico con B debido a que, al faltar
+    ; la implementacion de la fase de juego, no se llega a validar casos como 
+    ; posiciones que no esten alineadas en cruz con la ultima pieza del contrincante,
+    ; etc. Sin embargo, si se tenia un diseño en mente. Muy brevemente, hay una sección
+    ; en el segmento de datos del cual se escribe directamente en disco y viceversa.
+    ; Esas son las variables mas importantes de juego y en ellas se llevaba un registro
+    ; del turno (0 o 1) que ademas serviria para indexar una entrada de un arreglo que
+    ; respalda los datos mas importantes del turno anterior del rival (posicion de juego,
+    ; id del tablero).
+
+    ; De igual forma, el manejo de errores no esta completo debido a que falta la fase de
+    ; juego. Sin embargo, este programa igual utiliza un diseño de automata como he hecho
+    ; en tareas anteriores, asi que agregar esos errores seria casi inmediato de haber hecho
+    ; los procedimientos.
+
+    ; Lo que respecta al despliegue, como se menciono, esta incompleto. Se cuenta con una idea
+    ; general de como desplegar. Se analiza la fila y en un buffer aparte se contruye el marco
+    ; progresivamente. Hay 3 de 4 algoritmos hechos: Uno que crea un encabezado, destinado para
+    ; la primer fila, otro que crea un pie de pagina para la última, y otro que crea el formato
+    ; para la misma fila. Falta la funcion de intermedio, que seria la que conecta las lineas
+    ; entre filas de la 2 a la N. Esta no se implemento por tiempo, pero si tenia claro que debia
+    ; analizar simultaneamente la fila actual y la siguiente, tomando en cuenta el elem. anterior
+    ; como se hizo en las otras 3
+
+    ; Del juego, se puede crear el tablero y se tienen los controles previstos para entrar en dicha
+    ; fase. Sin embargo, quedo pendiente hacer las rutinas que toman los datos ya ingresados y
+    ; validan posicion, que el espacio este vacio, que este alineado con la ultima pieza, etc.
+    ; Para la fase de conteo de puntos, en la misma construccion del tablero se habia previsto
+    ; una lista tipo arreglo que identifcaba posicion e identificador de cada pieza. La idea era
+    ; que al detectar una partida acabada, se tomaria cada entrada del arreglo y una funcion haria
+    ; el recorrido con sus datos. Esta regresaria el puntaje del panel individual y la iteracion
+    ; obtendria el acumulado.
 ;
 
 ; Macros
@@ -85,6 +152,20 @@ DataSegment segment
         CHAR_LF    = 0Ah
         CHAR_SPACE = 20h
         CHAR_HTAB  = 09h
+
+        CHAR_UL_CORNER = 218 ; ┌
+        CHAR_UR_CORNER = 191 ; ┐
+        CHAR_DL_CORNER = 192 ; └
+        CHAR_DR_CORNER = 217 ; ┘
+
+        CHAR_R_JOINT = 180 ; ┤
+        CHAR_L_JOINT = 195 ; ├
+        CHAR_U_JOINT = 194 ; ┬
+        CHAR_D_JOINT = 193 ; ┴
+        CHAR_A_JOINT = 197 ; ┼
+
+        CHAR_V_LINE = 179 ; │
+        CHAR_H_LINE = 196 ; ─
     ;
 
     ; State Machine
@@ -106,7 +187,7 @@ DataSegment segment
         ERROR_INVALID_PANEL  = 8004h ; Chosen panel ran out
         ERROR_ORIENTATION    = 8005h ; Invalid orientation code
         ERROR_NON_INTEGER    = 8006h ; Non-int input for row/col
-        ERROR_INPUT_RANGE    = 8007h ; Row/Col exceeds range 0 to 9
+        ERROR_INPUT_RANGE    = 8007h ; Row/Col exceeds range 0 to 9 (Unused)
         ERROR_INVALID_PLAY   = 8008h ; Attempt to play during board creation stage
         ERROR_INVALID_ADD    = 8009h ; Attempt to add panel during match
         ERROR_PANEL_OVERFLOW = 800Ah ; Panel placement from pivot extends outside 10x10 grid
@@ -133,6 +214,7 @@ DataSegment segment
         GAME_RED_SENTINEL   = 'b'
         GAME_BLACK_TOKEN    = 'X'
         GAME_BLACK_SENTINEL = 'x'
+        GAME_NO_TOKEN       = 'O'
 
         ; Turn and panel shapes
         PLAYER_RED_TURN     = 0
@@ -152,6 +234,7 @@ DataSegment segment
         PANEL_SQUARE_OFFSET = 0202h
         PANEL_RECT_6_OFFSET = 0302h
 
+        PANEL_TYPES         = 4
         PANEL_SHAPE_LIMIT   = 4
         PANEL_SQUARE_LIMIT  = 5
         TOTAL_PANELS        = 17
@@ -195,6 +278,8 @@ DataSegment segment
     fileRestartPrompt db "Esta seguro de que quiere reiniciar la partida? (s/n): ", CHAR_NULL
     fileRestartHalt   db "Se ha cancelado la operacion de reinicio", CHAR_NULL
     fileRestartDone   db "Se ha reiniciado el archivo de la partida", CHAR_NULL
+
+    headerRow db "    0   1   2   3   4   5   6   7   8   9", CHAR_NULL
 ;
 
 ; Look-up Tables
@@ -202,9 +287,9 @@ DataSegment segment
     STATE_OFFSET = ($ - stateTable)
                 dw STATE_HELP,          PrintHelp
                 dw STATE_RESTART,       FileRestartWrapper
-                dw STATE_DISPLAY,       ExampleRoutine
-                dw STATE_FIRST_PANEL,   ExampleRoutine
-                dw STATE_PLACE_PANEL,   ExampleRoutine
+                dw STATE_DISPLAY,       DisplayWrapper
+                dw STATE_FIRST_PANEL,   AddPanelWrapper
+                dw STATE_PLACE_PANEL,   AddPanelWrapper
                 dw STATE_FIRST_TURN,    ExampleRoutine
                 dw STATE_PLAY_TURN,     ExampleRoutine
                 dw STATE_GAME_OVER,     ExampleRoutine
@@ -217,6 +302,13 @@ DataSegment segment
                 dw offset errorInvalidPlay, offset errorInvalidAdd, offset errorPanelOverflow, offset errorPanelAlone
                 dw offset errorPanelOverlap, offset errorInvalidTurn, offset errorHoleOccupied, offset errorPanelBlocked
                 dw offset errorVoidPosition, offset errorFileCorrupt
+
+    counterPtrVector db PANEL_LINE_2_ID, byte*0 ; Matches each ID to a counter, and a position offset
+                     db PANEL_LINE_3_ID, byte*1
+                     db PANEL_SQUARE_ID, byte*2
+                     db PANEL_RECT_6_ID, byte*3
+
+    posOffsetVector dw PANEL_LINE_2_OFFSET, PANEL_LINE_3_OFFSET, PANEL_SQUARE_OFFSET, PANEL_RECT_6_OFFSET
 ;
     base dw 10
 
@@ -232,9 +324,12 @@ DataSegment segment
     rowParam       db (?)
     colParam       db (?)
 
+    printBuffer   db 41 dup(0), CHAR_NULL
+    prevPrintChar db (?)
+
     ; Upcoming data variables are stored and recovered from disk
     programState   dw STATE_DEFAULT
-    turnCounter    dw PLAYER_RED_TURN
+    turnCounter    dw PLAYER_BLACK_TURN
     tokenCounters  db 2 dup(TOTAL_TOKENS)
     panelCounters  db 4 dup(0)
     panelArrayList dw TOTAL_PANELS dup(0)
@@ -806,13 +901,16 @@ CodeSegment segment
     ;          [panelArrayList] - Enlists panel data if operation is valid
     ;          [arrayListSize]  - Updates list size
     ;           AH:AL           - Compressed panel identifier : Panel Content
+    ;           CF              - Set if an error was flagged, cleared if successful
     CreatePanel proc
         PUSHLIST si, bx, cx, dx
 
         Call GetPivotOffsetSI
-        Mov bx, cx              ; Copy upper corner data to calc lower corner
-        Add bh, dh
-        Add bl, dl              ; Add counts to check lower corner
+        Mov bx, cx  ; Copy upper corner data to calc lower corner position
+        Add bh, dh  ; Add counts to determine halt position
+        Add bl, dl              
+        Dec bh      ; Adjustment to express proper range utilized. E.g If count = 1
+        Dec bl      ; and pos = 0, row/col 0 will be used, not row/col 1
         Cmp bh, MATRIX_SIZE
         Jae FLAG_PanelOverflow
         Cmp bl, MATRIX_SIZE
@@ -827,11 +925,11 @@ CodeSegment segment
         Add dl, cl  ; Compress offset from corner as DL = row:col counts
         Shl ah, 4   ; Set panel code as upper nibble
         Add ah, al
-        Xor al, al  ; Compress AH = PanelCode:ID, and AL = Panel Contents (empty default)
+        Mov al, GAME_NO_TOKEN ; Compress AH = PanelCode:ID, and AL = Panel Contents (empty default)
 
     ITER_CreatePanelRow:
         Call WritePanelRow
-        Jc END_IsPanelDifferent   ; Halt if an error was flagged
+        Jc END_CreatePanel        ; Halt if an error was flagged
         Add si, MATRIX_SIZE*dword ; Jump to next row
         Dec ch                    ; Discard processed row from count
         Jnz ITER_CreatePanelRow
@@ -840,21 +938,66 @@ CodeSegment segment
         And si, 00FFh                  ; Clear unrelated upper byte data
         Shl si, byte                   ; Adjust index for word-sized item addressing
 
-        Mov byte ptr panelArrayList[si],      ah ; Enlist panel identifier
-        Mov byte ptr panelArrayList[si+byte], dh ; and its location
+        Mov byte ptr panelArrayList[si+byte], ah ; Enlist panel identifier
+        Mov byte ptr panelArrayList[si],      dh ; and its location
         Inc arrayListSize                        ; Update item counter
-
+        Clc                                      ; Denote successful operation
         Jmp END_CreatePanel ; Halt without error state
 
     FLAG_PanelOverflow:
         Mov programState, ERROR_PANEL_OVERFLOW
+        Stc ; Denote operation error
     
     END_CreatePanel:
         POPLIST si, bx, cx, dx
         Ret
     CreatePanel endP
 
-    ; Determines if another panel unit belongs to a different identifier
+    ; Determines whether a panel has ran out or if it is available for use
+    ; Inputs:   AH - Valid code that identifies a panel type
+    ; Outputs:  AL - Current count of the panel type
+    ;           CF - Set if panel is available, clear if it ran out
+    ;           BX - Address to current count's byte
+    ;           DH:DL - Position offset in row:col format
+    GetPanelData proc
+        PUSHLIST si, cx
+
+        Xor bx, bx
+        Mov cx, PANEL_TYPES
+    ITER_GetPanelData:
+        Mov dx, word ptr counterPtrVector[bx] ; Get entry DH:DL = Index:ID
+        Cmp ah, dl
+        Je AUX_PanelMatch ; Halt if a match is found
+        INCW bx           ; Otherwise, proceed to next entry
+        Loop ITER_GetPanelData ; Always finds a match assuming AH was validated previously
+
+    AUX_PanelMatch:
+        Mov bl, dh                         ; Retrieve countPtr to obtain
+        Mov al, byte ptr panelCounters[bx] ; copy of current count, used as an ID enumerator
+        Mov dh, PANEL_SHAPE_LIMIT   ; To test availability
+
+        Cmp ah, PANEL_SQUARE_ID
+        Jne TEST_IsPanelAvailable   ; If panel is not a square, perform default test
+        Mov dh, PANEL_SQUARE_LIMIT  ; Otherwise, use respective boundary
+
+    TEST_IsPanelAvailable:
+        Cmp al, dh
+        Jb FLAG_PanelAvailable  ; Flag panel as ready for use
+        Clc
+        Jmp END_GetPanelData    ; Otherwise, flag unavailable
+
+    FLAG_PanelAvailable:
+        Stc
+    END_GetPanelData:
+        Pushf ; To avoid SHL from altering CF result
+        Shl bx, 1            ; Adjust index to address word sized items
+        Popf
+        Mov dx, word ptr posOffsetVector[bx] ; Retrieve position offset
+        POPLIST si, cx
+        Ret
+    GetPanelData endP
+
+        ; Determines if another panel unit belongs to a different identifier
     ; Inputs:   AH - Panel identifier from current panel
     ;           BH - Assumed panel identifier from another panel
     ; Outputs: CF - Set if both panels are different, cleared if the target is void or the same panel
@@ -881,46 +1024,374 @@ CodeSegment segment
         PUSHLIST si, ax, bx, cx
 
         Call GetPivotOffsetSI
-        Xchg cx, dx             ; Set counters in CX for loops
-    ITER_LonePanelRow:
-        PUSHLIST si, cx
+    ITER_LonePanelRow: ; CH:CL tracks row:col position of SI, DH:DL track remaining loops for row:col
+        PUSHLIST si, cx, dx ; Preserve row and it offset's values to avoid permanent alteration in inner loop
     ITER_LonePanelCol:
+        
+        Cmp ch, 0
+        Je TEST_AreaBelow ; If row is 0, skip as there are no rows above it
+
         Mov bx, word ptr boardGrid[si - MATRIX_SIZE*dword] ; Check area unit from above
         Call IsPanelDifferent
         Jc FLAG_PanelSurrounded    ; Halt if another panel structure is adjacent, flag is already set
+
+    TEST_AreaBelow:
+        Cmp ch, MATRIX_SIZE-1
+        Je TEST_LeftArea       ; Skip if last row, there are none below it
 
         Mov bx, word ptr boardGrid[si + MATRIX_SIZE*dword] ; Check area unit from below
         Call IsPanelDifferent
         Jc FLAG_PanelSurrounded
 
+    TEST_LeftArea:
+        Cmp cl, 0
+        Je TEST_RightArea      ; Skip if last column, there are none next to it
+
         Mov bx, word ptr boardGrid[si - dword]  ; Check area unit to its left
         Call IsPanelDifferent
         Jc FLAG_PanelSurrounded
 
+    TEST_RightArea:
+        Cmp cl, MATRIX_SIZE-1
+        Je AUX_IsLonePanel  ; Skip if first column, there are none prior to it
+
         Mov bx, word ptr boardGrid[si + dword]  ; Check area unit to its right
         Call IsPanelDifferent
         Jc FLAG_PanelSurrounded
-        
+    
+    AUX_IsLonePanel:
         Add si, dword ; Jmp to next column
-        Dec cl        ; Discard processed col from count
+        Inc cl        ; Update col value to track SI position
+        Dec dl        ; Discard processed col from count
         Jnz ITER_LonePanelCol
 
-        POPLIST si, cx
+        POPLIST si, cx, dx
         Add si, MATRIX_SIZE*dword ; Jump to next row
-        Dec ch                    ; Discard processed row
+        Inc ch                    ; Update row value to track SI position
+        Dec dh                    ; Discard processed row
         Jnz ITER_LonePanelRow
 
         Stc ; Set to denote no adjacent panel structure different from itself exists
         Jmp END_IsLonePanel
     
     FLAG_PanelSurrounded:
-        POPLIST si, cx ; Resolve pending stack clean up from iter
-        Clc            ; Clear to denote condition as false
+        POPLIST si, cx, dx ; Resolve pending stack clean up from iter
+        Clc                ; Clear to denote condition as false
 
     END_IsLonePanel:
         POPLIST si, ax, bx, cx
         Ret
     IsLonePanel endP
+
+    ; Processes an add panel request, and performs any validations necessary
+    ; Inputs: [panelParam]      - Valid panel code requested
+    ;         [directionParam]  - Valid panel orientation code
+    ;         [rowParam]        - Row position for pivot (upper corner) of panel
+    ;         [colParam]        - Col position for pivot
+    ; Outputs: [boardGrid]      - Updates matrix contents with panel
+    ;          [programState]   - May set an error state if panel ran out, overflows,
+    ;                             overlaps, is alone (2nd onwards), or if a play request
+    ;                             was sent instead. It may also transition to the gameplay
+    ;                             stage when the board is finished
+    AddPanelWrapper proc
+        PUSHLIST ax, bx, cx, dx
+
+        Cmp commandParam, CMD_PLAY_TURN
+        Je FLAG_InvalidPlay ; Block play requests until board is created
+
+        Mov ah, panelParam
+        Call GetPanelData              ; Get AL:countEnum, and [BX} to index original counter, and posOffset in DX
+        Jnc FLAG_PanelUnavailable      ; Halt if requested panel already ran out
+        Inc byte ptr panelCounters[bx] ; Otherwise, update to account for current panel request
+
+        Mov ch, rowParam ; Set row:col position prior to proc call
+        Mov cl, colParam ; AH:AL and DH:DL already set
+        Cmp directionParam, PANEL_VERTICAL
+        Je WRITE_AddPanelWrapper            ; Proceed to panel creation for default direction
+        Xchg dh, dl                         ; Otherwise, exchange row:col values in posOffset   
+
+    WRITE_AddPanelWrapper:
+        Call CreatePanel
+        Jc END_AddPanelWrapper ; Halt if panel creation resulted in an error
+
+        Cmp programState, STATE_FIRST_PANEL ; If not the first panel, test it is adjacent to existing panels
+        Jne TEST_PanelAdjacency
+        Mov programState, STATE_PLACE_PANEL ; Otherwise, update game state for future panel operations, and skip
+        Jmp  AUX_AddPanelWrapper            ; adjacency test
+    
+    TEST_PanelAdjacency:
+        Call IsLonePanel
+        Jc FLAG_LonePanel
+    
+    AUX_AddPanelWrapper:
+        Cmp arrayListSize, TOTAL_PANELS
+        Jb SAVE_AddPanelWrapper
+        Mov programState, STATE_FIRST_TURN ; If play area is complete, update game state to allow play commands
+    
+    SAVE_AddPanelWrapper:
+        Call WriteGameFile ; If operation was successful, save to disk
+        Mov programState, STATE_HALT
+        Jmp END_AddPanelWrapper ; Skip error flagging logic
+    FLAG_LonePanel:
+        Mov programState, ERROR_PANEL_ALONE
+        Jmp END_AddPanelWrapper
+    FLAG_PanelUnavailable:
+        Mov programState, ERROR_INVALID_PANEL
+        Jmp END_AddPanelWrapper
+    FLAG_InvalidPlay:
+        Mov programState, ERROR_INVALID_PLAY
+    END_AddPanelWrapper:
+        POPLIST ax, bx, cx, dx
+        Ret
+    AddPanelWrapper endP
+
+    ; Prepares a printable buffer with a row's header
+    ; Inputs: [SI] - Pointer to the start of the row
+    ; Outputs: [printBuffer] - Contents to print
+    WriteRowHeader proc
+        PUSHLIST si, di, ax, cx, dx
+
+        Xor di, di ; To index within printBuffer
+        Mov cx, MATRIX_SIZE
+        Mov prevPrintChar, VOID_PANEL
+    ITER_WriteRowHeader:
+        Mov dh, CHAR_SPACE
+        Mov dl, CHAR_SPACE ; Assume empty print
+        Mov ax, word ptr boardGrid[si] ; AH:AL = ID:Content
+
+        Cmp ah, prevPrintChar ; Determine if area is continuous or not
+        Je EQUAL_WriteRowHeader
+
+    DIFF_WriteRowHeader:
+        Mov dh, CHAR_UL_CORNER
+        Mov dl, CHAR_H_LINE
+
+        Cmp prevPrintChar, VOID_PANEL ; Case: New panel after void area
+        Je WRITE_WriteRowHeader
+
+        Cmp ah, VOID_PANEL
+        Jne AUX_WriteRowHeader    ; Case: 2 different adjacent panels
+        Mov dh, CHAR_UR_CORNER
+        Mov dl, CHAR_SPACE
+        Jmp WRITE_WriteRowHeader ; Case: Void area after panel
+    
+    AUX_WriteRowHeader:
+        Mov dh, CHAR_U_JOINT    ; Set left-right top joint between panels
+        Jmp WRITE_WriteRowHeader
+
+    EQUAL_WriteRowHeader:
+        Cmp ah, VOID_PANEL
+        Je WRITE_WriteRowHeader ; Case: Continuous void area
+        Mov dh, CHAR_H_LINE
+        Mov dl, CHAR_H_LINE ; Case: Continuous panel area
+
+    WRITE_WriteRowHeader:
+        Mov byte ptr printBuffer[di],   dh ; Write area opener
+        Mov byte ptr printBuffer[di+1], dl ; Write header of area content
+        Mov byte ptr printBuffer[di+2], dl
+        Mov byte ptr printBuffer[di+3], dl
+
+        Add si, dword ; Read next board area
+        Add di, dword ; and point to next buffer area
+        Mov prevPrintChar, ah
+        Loop ITER_WriteRowHeader
+
+        Mov dh, CHAR_SPACE
+        Cmp prevPrintChar, VOID_PANEL
+        Je END_WriteRowHeader
+        Mov dh, CHAR_UR_CORNER
+
+    END_WriteRowHeader:
+        Mov byte ptr printBuffer[di], dh
+        POPLIST si, di, ax, cx, dx
+        Ret
+    WriteRowHeader endP
+
+    ; Prepares a printable buffer with a row's footer
+    ; Inputs: [SI] - Pointer to the start of the row
+    ; Outputs: [printBuffer] - Contents to print
+    WriteRowFooter proc
+        PUSHLIST si, di, ax, cx, dx
+
+        Xor di, di ; To index within printBuffer
+        Mov cx, MATRIX_SIZE
+        Mov prevPrintChar, VOID_PANEL
+    ITER_WriteRowFooter:
+        Mov dh, CHAR_SPACE
+        Mov dl, CHAR_SPACE ; Assume empty print
+        Mov ax, word ptr boardGrid[si] ; AH:AL = ID:Content
+
+        Cmp ah, prevPrintChar ; Determine if area is continuous or not
+        Je EQUAL_WriteRowFooter
+
+    DIFF_WriteRowFooter:
+        Mov dh, CHAR_DL_CORNER
+        Mov dl, CHAR_H_LINE
+
+        Cmp prevPrintChar, VOID_PANEL ; Case: New panel after void area
+        Je WRITE_WriteRowFooter
+
+        Cmp ah, VOID_PANEL
+        Jne AUX_WriteRowFooter    ; Case: 2 different adjacent panels
+        Mov dh, CHAR_DR_CORNER
+        Mov dl, CHAR_SPACE
+        Jmp WRITE_WriteRowFooter ; Case: Void area after panel
+    
+    AUX_WriteRowFooter:
+        Mov dh, CHAR_D_JOINT    ; Set left-right bottom joint between panels
+        Jmp WRITE_WriteRowFooter
+
+    EQUAL_WriteRowFooter:
+        Cmp ah, VOID_PANEL
+        Je WRITE_WriteRowFooter ; Case: Continuous void area
+        Mov dh, CHAR_H_LINE
+        Mov dl, CHAR_H_LINE ; Case: Continuous panel area
+
+    WRITE_WriteRowFooter:
+        Mov byte ptr printBuffer[di],   dh ; Write area opener
+        Mov byte ptr printBuffer[di+1], dl ; Write header of area content
+        Mov byte ptr printBuffer[di+2], dl
+        Mov byte ptr printBuffer[di+3], dl
+
+        Add si, dword ; Read next board area
+        Add di, dword ; and point to next buffer area
+        Mov prevPrintChar, ah
+        Loop ITER_WriteRowFooter
+
+        Mov dh, CHAR_SPACE
+        Cmp prevPrintChar, VOID_PANEL
+        Je END_WriteRowFooter
+        Mov dh, CHAR_UR_CORNER
+
+    END_WriteRowFooter:
+        Mov byte ptr printBuffer[di], dh
+        POPLIST si, di, ax, cx, dx
+        Ret
+    WriteRowFooter endP
+
+    ; Prepares a printable buffer with a row's inner contents
+    ; Inputs: [SI] - Pointer to the start of the row
+    ; Outputs: [printBuffer] - Contents to print
+    WriteInnerRow proc
+        PUSHLIST si, di, ax, cx, dx
+
+        Xor di, di ; To index within printBuffer
+        Mov cx, MATRIX_SIZE
+        Mov prevPrintChar, VOID_PANEL
+    ITER_WriteInnerRow:
+        Mov dh, CHAR_SPACE ; Assume empty print
+        Mov ax, word ptr boardGrid[si] ; AH:AL = ID:Content
+
+        Cmp ah, prevPrintChar ; Determine if area is continuous or not
+        Je EQUAL_WriteInnerRow
+
+    DIFF_WriteInnerRow:
+        Mov dh, CHAR_V_LINE
+
+        Cmp ah, VOID_PANEL
+        Jne WRITE_WriteInnerRow ; Case: Current area is a panel
+        Mov al, CHAR_SPACE
+        Jmp WRITE_WriteInnerRow ; Case: Void area after panel
+    
+    AUX_WriteInnerRow:
+        Mov dh, CHAR_U_JOINT    ; Set left-right top joint between panels
+        Jmp WRITE_WriteInnerRow
+
+    EQUAL_WriteInnerRow:
+        Cmp ah, VOID_PANEL
+        Jne WRITE_WriteInnerRow ; Case: Continuous panel area
+        Mov al, CHAR_SPACE ; Case: Continuous void area
+
+    WRITE_WriteInnerRow:
+        Mov byte ptr printBuffer[di],   dh ; Write area opener
+        Mov byte ptr printBuffer[di+2], al ; Write panel contents or empty space
+
+        Mov dh, '<'
+        Mov dl, '>'
+
+        Cmp al, GAME_RED_SENTINEL
+        Je EDGE_WriteInnerRow
+        Cmp al, GAME_BLACK_SENTINEL
+        Je EDGE_WriteInnerRow
+
+        Mov dh, CHAR_SPACE
+        Mov dl, CHAR_SPACE
+    
+    EDGE_WriteInnerRow:
+        Mov byte ptr printBuffer[di+1], dl ; Write filler content
+        Mov byte ptr printBuffer[di+3], dl
+
+        Add si, dword ; Read next board area
+        Add di, dword ; and point to next buffer area
+        Mov prevPrintChar, ah
+        Loop ITER_WriteInnerRow
+
+        Mov dh, CHAR_SPACE
+        Cmp prevPrintChar, VOID_PANEL
+        Je END_WriteInnerRow
+        Mov dh, CHAR_V_LINE
+
+    END_WriteInnerRow:
+        Mov byte ptr printBuffer[di], dh
+        POPLIST si, di, ax, cx, dx
+        Ret
+    WriteInnerRow endP
+
+    ; Placeholder display routine
+    DisplayWrapper proc
+        PUSHLIST si, di, ax, cx, dx
+
+        Mov si, offset headerRow
+        Call PrintLikeC
+        Call PrintCRLF
+
+        Xor si, si ; To index board contents
+        Mov cx, MATRIX_SIZE
+        Mov ah, DOS_PRINT_CHAR
+    ITER_DisplayWrapper:
+        Mov dl, CHAR_SPACE
+        Int 21h
+        Int 21h ; Print header prefix
+
+        Call WriteRowHeader
+        Mov di, offset printBuffer
+        Xchg si, di
+        Call PrintLikeC
+        Call PrintCRLF
+        Xchg si, di
+
+        Mov dl, 3Ah
+        Sub dl, cl  ; Print row num and
+        Int 21h
+        Mov dl, CHAR_SPACE
+        Int 21h     ; space for row prefix
+
+        Call WriteInnerRow
+        Mov di, offset printBuffer
+        Xchg si, di
+        Call PrintLikeC
+        Call PrintCRLF
+        Xchg si, di
+
+        Add si, MATRIX_SIZE*dword ; Point to next row's start
+        Loop ITER_DisplayWrapper
+
+        Mov dl, CHAR_SPACE
+        Int 21h
+        Int 21h                    ; Print row footer prefix
+        
+        Sub si, MATRIX_SIZE*dword ; Point back to last row
+        Call WriteRowFooter
+
+        Mov si, offset printBuffer ; Print row's footer
+        Call PrintLikeC
+        Call PrintCRLF
+
+        Mov programState, STATE_HALT
+
+        POPLIST si, di, ax, cx, dx
+        Ret
+    DisplayWrapper endP
 
     ; Routine for example state
     ; Inputs: ...
@@ -987,104 +1458,7 @@ CodeSegment segment
         Pop cx
         Ret
     RunState endP
-    
-    ; Ideas preliminares de como lograr juego
 
-    ; 1) Usar memoria en disco como memoria pseudo dinámica y una matriz sencilla
-    ;   PROS: Conveniente para la revisión de puntajes por áreas
-    ;   CONS: Requiere mucho planificamiento en disco y un estándar sólido la lectura del archivo
-
-    ; 2) Usar una matriz con estructuras por celdas
-    ;   PROS: No requiere mucha administración del disco más alla de guardar el estado del juego
-    ;   CONS: La revisión de puntajes requiere que se almacene los rangos de las piezas y algun
-    ;         listado auxiliar para determinar que piezas ya se revisaron
-
-    ; Como la cantidad de piezas son fijas, el manejado de un listado de piezas se puede hacer con
-    ; memoria estática. Hay que determinar que tamaño debería tener la estructura de cada celda
-    ; para que sea conveniente de procesar
-
-    ; En cada celda sería necesario guardar lo siguiente
-    ;   Cuadrado del panel: Forma implicita, deben ser coordenadas de la esquina superior izq. a la inferior derecha
-    ;                       Si es una linea horizontal, seria (r,c) y (r  ,c+k)
-    ;                       Si es una linea vertical          (r,c) y (r+k,c)
-    ;                       Si es un cuadrado                 (r,c) y (r+k,c+k)
-    ;                       Si es un rectangulo horizontal    (r,c) y (r+i,c+j)
-    ;                       Si es un rectangulo vertical      (r,c) y (r+j,c+i)
-    ;   En resumen, sería posible hacer el recorrido de indices a partir de esos valores [for range (r1, r2): for range (c1, c2)]
-    ;   El problema es que por si solo, esto solo sirve para analizar un panel individual. No permite distinguir unos de otros.
-    ;   En la misma asignación del panel en matriz se puede insertar la información. Asumiendo SI = Row, BX = Col, CH = Row offset, CL = Col offset
-    ;   Se puede crear por adelantado un valor DH:DL = (row, col):(row+i, col+j). Note que una coordenada puede caber en un byte, pues la matriz se espera
-    ;   indexar de 0 a 9 y un nibble se presta para 16 valores distintos. La gran ventaja de estos datos es que indican
-    ;   su orientación de forma tácita. Ya con esto se ocupa un mínimo de un word para la estructura.
-    ;
-    ;   Identificador del panel: De las 17 piezas, a lo sumo hay 5 de un mismo tipo (panel cuadrado). El resto son 4 c/u. En total son 4 tipos
-    ;   de figuras. Ambos datos caben en un byte a cambio de complicar la lectura:
-    ;       a) Usar los 2 most significant bits para indicar tipo de pieza (00xx-xxxx, 01xx-xxxx, 10xx-xxxx, 11xx-xxxx)
-    ;          y el resto para indicar su ID (1,2,3,4,5*)
-    ;       b) Usar el high nibble para el tipo de pieza y el nibble bajo para el ID
-    ;   Aunque evidentemente es más cómoda la b, podría ser necesario guardar datos de forma compresa. Una idea sería no usar un
-    ;   identificador en sí, sino un vector. Habría que retomar la idea de la orientación, y revisar su permutación para identificar el tipo
-    ;   de pieza. Como el vector ocupa mínimo un nibble para los offsets (0-9 de 16 valores), se ocuparia igual un word + byte de todos modos.
-    ;   Por lo tanto, sería mejor seguir la opción b de momento ya que no puede optimizarse más el consumo de bytes para identificar el pivote
-    ;   del panel y su desplazamiento. Además, no vale la pena usar vectores para identificar el tipo de figura si de todos modos se requiere un
-    ;   byte adicional, que sería mejor que mantenga ese dato a mano
-    ;
-    ;   Contenido del panel: Posiblemente el más sencillo, pues su revisión es directa a diferencia de los otros que deben procesarse
-    ;                        sus bit strings. Para este se podría almacenar directamente un 'O' para indicar posición vacía. Un '2'
-    ;                        para ficha negra sentinela, un '1' para ficha roja sentinela, un 'X' para ficha negra y un 'B' para ficha roja
-    ;
-    ; Además del tablero, sería prudente manejar entonces el listado de piezas en orden con un array de words {Little-endian: coordPivote, identificador}
-    ; Este siempre inicia vacío, pero conforme se crea el tablero (y por ende, se cargará del disco a memoria como tal), se agregará el registro de su
-    ; creación siempre que fuera un posicionamiento válido
-    ;
-    ; Encima de ello, se necesita manejar un contador o bandera de turno. Una forma sería mediante el estado del programa, pero esto duplicaría
-    ; los estados funcionales del mismo. Lo mejor sería una variable aparte. Pienso que la alternativa sería otro arreglo de dos elementos.
-    ; Cada elemento indica la última jugada del contrincante mediante un indice de turno. En la etapa/fase del tablero, el arreglo se mantendra vacío
-    ; y sólo se revisara el indice de partida. Cuando se esté en fase de juego, además de revisar el turno, se puede comparar los datos de la jugada anterior.
-    ; La idea entonces es:
-    ;       a) Se distingue el primer turno por un estado del programa, se permite cualquier jugada con entradas numericamente validas. Además de actualizar
-    ;          el contador de turno, se utiliza para guardar la jugada del contrincante. (0:Red, 1:Black)
-    ;          Ej. 0 -> 1 : Red Player Finished turn, prevTurn[1] = inputPos:byte, identificador, viceversa
-    ;       b) En otros turnos, se mantiene la dinámica pero antes de insertar, se recupera la posición del turno previo para comparar si la jugada es valida.
-    ;          Como debe alinearse en cruz, debe tener la misma fila o la misma columna, pero no ambas. Si está en cruz, luego se recupera la dirección en DI
-    ;          de donde quiere colocarse la ficha. A partir de ahí, se revisa que el panel este vacío, luego que el identificador no sea el mismo que el del
-    ;          turno del contrincante. Si todo está en orden, se coloca el contenido respectivo.
-    ;       c) Un detalle IMPORTANTE: Al finalizar el turno, se debe actualizar ademas el sentinela de la jugada. Es decir, en otros turnos, tras colocar el nuevo
-    ;          sentinela (se puede indexar el caracter a colocar en otro arreglo con 0 y 1), se debe "normalizar" la posición anterior para que tenga un caracter
-    ;          regular. Luego de ello, se puede actualizar el contador de turno, y luego se guarda la jugada en la celda del contrincante.
-    ;       d) Al finalizar la jugada en turnos distintos del primero, es conveniente hacer la revisión de la nueva cruz que debe cumplir el siguiente jugador.
-    ;          Nota a futuro: Se que podría parecer que la revisión se necesita antes de mover el contador de turno. Sin embargo, lo que se ocupa es determinar
-    ;          por adelantado si la cruz esta llena antes de permitir un nuevo turno. Debió existir por lo menos un turno inicial que condicionó otro turno y ese
-    ;          turno ha revisado la cruz para el siguiente turno y viceversa en cascada. Otra forma de verlo es que la cruz en la que jugo un jugador tenia campos
-    ;          de sobra, pero uno de esos llevaba a una posición de gane en la que el otro jugador no puede participar más.
-    ;       e) Finalmente, debe revisarse también que queden fichas para el siguiente jugador. Nuevamente, esto se puede manejar con un sencillo arreglo al que
-    ;          se apunta con el contador de turno. Una opción sería mezclar el arreglo del que se toma el caracter, pero veo mejor el no alambrar estos datos
-    ;          solo porque se puede.
-    ;
-    ; Una vez establecido el estado de fin del juego, el programa puede hacer el conteo de puntos iterando sobre el arreglo estático de piezas. Por cada una
-    ; se recorre su área para contar que ficha domina. Según el código identificador, se puede otorgar los puntos respectivos. Si hay empate, se detiene la iteración.
-    ; También se agrega un conteo de cuantas areas ganó cada uno.
-    ;
-    ; Otro aspecto relevante sería el agrupamiento de variables en memoria. Sería conveniente que todas las que se escriben al archivo estén juntas, pues se podría
-    ; dar un simple puntero al inicio y usar una variable del preprocesador para calcular la longitud de la dirección. Con ello se manda a escribir al archivo y listo.
-
-    ; Borrador de la estructura del archivo de juego
-    ;
-    ; Los datos pertinentes a la funcionalidad del programa son
-    ;       programState (word) : Determina el contexto de la partida para el programa, defaults to 0000h for new games
-    ;       turnCounter  (word) : Determina turno del jugador y permite acceder datos pertinentes al mismo (ultimo mov del contrincante, representacion de piezas)
-    ;       panelCounters byte array[4] : Lleva conteo de 0 a k_i para determinar disponibilidad de piezas
-    ;       panelList word array[17] : Inicia nulo, en el se registrara el orden en que se colocaron las piezas
-    ;       listSize (byte)          : Lleva conteo de piezas colocadas
-    ;       previousTurn word array[2] : Cada elemento es la ultima posicion jugada por el contrincante y el panelID asociado
-    ;       tokenCounters byte array[2] : Similar al anterior, lleva registro de cuantas fichas/esferas quedan para cada jugador
-    ;       boardGrid dword array[10][10] : Inicializado en 00h para toda celda. Esta informacion se sobreescribe al colocar paneles y fichas
-    ;
-    ; Otro dato relevante, pero que es estatico y por lo tanto no se almacenara, es la letra de escritura para el contenido de una celda
-    ;       tokenData word array[2]
-    ; Igualmente se referencia con el turn counter, pero este contiene dos chars. Uno que identifica una pieza regular y otro para piezas sentinelas
-    ; Para mayor conveniencia, se ordenaran dichas variables pertinentes en secuencia para poder escribir y leerlas como si se tratasen de un buffer
-    ; dedicado de archivos
 
     main:
         Mov ax, ds
@@ -1095,23 +1469,6 @@ CodeSegment segment
 
         Mov ax, DataSegment
         Mov ds, ax ; Set data's address
-
-
-        ;Mov cx, 0503h
-        ;Mov dx, PANEL_RECT_6_OFFSET
-        ;Mov ax, 4141h
-        ;Call CreatePanel
-
-        ;Mov cx, 0501h
-        ;Mov dx, PANEL_LINE_3_OFFSET
-        ;Mov ax, 4242h
-        ;Call CreatePanel
-        ;Call IsLonePanel
-
-        ;Call WriteGameFile
-        ;Call LoadGameFile
-        ;Call FileRestartWrapper
-        ;Jmp exit
 
     ITER_main:
         Cmp programState, STATE_HALT
