@@ -24,6 +24,26 @@
 
 ; Macros
 
+    ; Creates a BP backup before setting it as a pointer to the SP
+    ; Optionally, it allocates space below the stack for local variables
+    ; Inputs: pAllocSize - Byte count that is subtracted to SP for local variables
+    SET_STACKFRAME Macro pAllocSize
+        Push bp
+        Mov bp, sp
+        IFNB <pAllocSize>
+            Sub sp, pAllocSize
+        EndIF
+    endM
+
+    ; Releases stack space for local variables before restoring BP
+    ; Optionally releases stack space for arguments
+    ; Inputs: pArgSize - Byte count to release in Ret N instruction
+    END_STACKFRAME Macro pArgSize
+        Mov sp, bp
+        Pop bp
+        Ret pArgSize
+    endM
+
     ; Pushes a list of registers to the CPU stack in order
     ; Inputs: R1~R12 : List of comma-separated registers
     PUSHLIST Macro R1:REQ,R2,R3,R4,R5,R6,R7,R8,R9,R10,R11,R12
@@ -44,6 +64,12 @@
         Pop R1
     endM
 
+    ; Increases a register with a word-sized step
+    ; Inputs: R - Register to increase
+    INCW Macro R:REQ
+        Inc R
+        Inc R
+    endM
 ;
 
 DataSegment segment
